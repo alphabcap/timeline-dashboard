@@ -111,9 +111,12 @@ export default function App() {
     refreshTeamMembers()
     setTeamMembers(newMembers)
     // Persist to Gist so all users stay in sync
+    console.log("[App] updateTeamMembers called, gistConfigured:", gistConfigured)
     if (gistConfigured) {
       setGistSyncing(true)
-      saveTeamToGist(newMembers).finally(() => setGistSyncing(false))
+      saveTeamToGist(newMembers)
+        .then((ok) => console.log("[App] Gist save result:", ok))
+        .finally(() => setGistSyncing(false))
     }
   }
 

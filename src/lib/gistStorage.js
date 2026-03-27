@@ -35,7 +35,11 @@ export async function loadTeamFromGist() {
 
 /** Save team members to Gist. Returns true on success. */
 export async function saveTeamToGist(members) {
-  if (!GIST_ID || !GITHUB_TOKEN) return false
+  console.log("[Gist] saveTeamToGist called", { GIST_ID: !!GIST_ID, GITHUB_TOKEN: !!GITHUB_TOKEN, memberCount: members?.length })
+  if (!GIST_ID || !GITHUB_TOKEN) {
+    console.warn("[Gist] Missing GIST_ID or GITHUB_TOKEN — cannot save")
+    return false
+  }
   try {
     const res = await fetch(`${API_BASE}/${GIST_ID}`, {
       method:  "PATCH",
@@ -44,8 +48,10 @@ export async function saveTeamToGist(members) {
         files: { [FILENAME]: { content: JSON.stringify(members) } },
       }),
     })
+    console.log("[Gist] PATCH response:", res.status)
     return res.ok
-  } catch {
+  } catch (err) {
+    console.error("[Gist] Save failed:", err)
     return false
   }
 }
