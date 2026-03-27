@@ -1,6 +1,97 @@
 @import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;0,900;1,400&display=swap');
 @import "tailwindcss";
 
+:root {
+  --ease-magic: cubic-bezier(0.22, 1, 0.36, 1);
+  --magic-glow-red: rgba(239, 68, 68, 0.45);
+  --magic-glow-purple: rgba(147, 51, 234, 0.35);
+}
+
 * {
   font-family: 'Prompt', sans-serif;
+}
+
+/* ── MAGIC Entrance Animations ─────────────────────────────── */
+
+@keyframes magic-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes magic-scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes magic-view-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Overdue Emphasis ──────────────────────────────────────── */
+
+@keyframes magic-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--magic-glow-red); }
+  50%      { box-shadow: 0 0 12px 4px var(--magic-glow-red); }
+}
+
+@keyframes magic-pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+
+/* ── Decorative / Brand ────────────────────────────────────── */
+
+@keyframes magic-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes magic-chip-glow {
+  0%   { box-shadow: 0 0 0 0 var(--magic-glow-purple); }
+  40%  { box-shadow: 0 0 10px 3px var(--magic-glow-purple); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ── Utility Classes ───────────────────────────────────────── */
+
+.animate-magic-enter  { animation: magic-slide-up 500ms var(--ease-magic) both; }
+.animate-magic-scale  { animation: magic-scale-in 500ms var(--ease-magic) both; }
+.animate-magic-view   { animation: magic-view-enter 400ms var(--ease-magic) both; }
+.animate-overdue-glow { animation: magic-pulse-glow 2.5s ease-in-out infinite; }
+.animate-overdue-pulse { animation: magic-pulse-subtle 2s ease-in-out infinite; }
+.animate-chip-glow    { animation: magic-chip-glow 600ms var(--ease-magic) both; }
+
+.animate-magic-shimmer {
+  background-image: linear-gradient(110deg, transparent 25%, rgba(255,255,255,0.3) 37%, transparent 63%);
+  background-size: 200% 100%;
+  animation: magic-shimmer 2s ease-in-out infinite;
+}
+
+/* ── Reduced Motion ────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Scrollbar Helpers ─────────────────────────────────────── */
+
+.timeline-scroll-sync::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+.timeline-scroll-sync {
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+.scrollbar-hide {
+  scrollbar-width: none;
 }

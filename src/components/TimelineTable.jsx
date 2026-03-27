@@ -1,19 +1,32 @@
-import { useState, Fragment } from "react"
+import { useState, Fragment, useMemo } from "react"
+import { buildFileColorMap } from "../lib/sheetsApi"
+import AssignTeam from "./AssignTeam"
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
 export const overdueTasks = [
-  { id: 1, clientName: "True Corporation", done: false, month: "MAR",      topic: "Q4 Strategy Deck",         responsibility: "Strategy Team",     dueDate: "2026-03-03" },
-  { id: 2, clientName: "Nike TH",          done: false, month: "MAR",      topic: "Idea – Brief from Client", responsibility: "Account Executive", dueDate: "2026-03-08" },
-  { id: 3, clientName: "Nike TH",          done: false, month: "Internal", topic: "Revise Campaign Concept",  responsibility: "Creative Director", dueDate: "2026-03-10" },
-  { id: 4, clientName: "PTT Exploration",  done: false, month: "MAR",      topic: "Present Idea to Client",   responsibility: "Creative Director", dueDate: "2026-03-13" },
-  { id: 5, clientName: "PTT Exploration",  done: false, month: "Internal", topic: "Revise Internal Proposal", responsibility: "Account Manager",   dueDate: "2026-03-17" },
+  { id: 1, clientName: "True Corporation", done: false, month: "MAR",      topic: "Q4 Strategy Deck",         responsibility: "Tony",        dueDate: "2026-03-03" },
+  { id: 2, clientName: "Nike TH",          done: false, month: "MAR",      topic: "Idea – Brief from Client", responsibility: "Pleng",       dueDate: "2026-03-08" },
+  { id: 3, clientName: "Nike TH",          done: false, month: "Internal", topic: "Revise Campaign Concept",  responsibility: "RK, Boom",    dueDate: "2026-03-10" },
+  { id: 4, clientName: "PTT Exploration",  done: false, month: "MAR",      topic: "Present Idea to Client",   responsibility: "Tony, Pleng", dueDate: "2026-03-13" },
+  { id: 5, clientName: "PTT Exploration",  done: false, month: "Internal", topic: "Revise Internal Proposal", responsibility: "Aom, Point",  dueDate: "2026-03-17" },
 ]
 export const upcomingTasks = [
-  { id: 6, clientName: "True Corporation", done: false, month: "MAR",      topic: "Content Production & Asset Delivery", responsibility: "Content Team",      dueDate: "2026-03-19" },
-  { id: 7, clientName: "Nike TH",          done: false, month: "MAR",      topic: "Campaign Launch Review",              responsibility: "Account Manager",   dueDate: "2026-03-21" },
-  { id: 8, clientName: "PTT Exploration",  done: false, month: "Internal", topic: "Final Report to Client",              responsibility: "Account Executive", dueDate: "2026-03-25" },
-  { id: 9, clientName: "True Corporation", done: false, month: "MAR",      topic: "Post-Campaign Analysis",              responsibility: "Strategy Team",     dueDate: "2026-03-27" },
+  { id: 6, clientName: "True Corporation", done: false, month: "MAR",      topic: "Content Production & Asset Delivery", responsibility: "RK, Aom",     dueDate: "2026-03-19" },
+  { id: 7, clientName: "Nike TH",          done: false, month: "MAR",      topic: "Campaign Launch Review",              responsibility: "Boom",        dueDate: "2026-03-21" },
+  { id: 8, clientName: "PTT Exploration",  done: false, month: "Internal", topic: "Final Report to Client",              responsibility: "Pleng, Boom", dueDate: "2026-03-25" },
+  { id: 9, clientName: "True Corporation", done: false, month: "MAR",      topic: "Post-Campaign Analysis",              responsibility: "Tony, Point", dueDate: "2026-03-27" },
+]
+
+// Mock done tasks for demo (includes a 100% done client: "SCB")
+export const doneTasks = [
+  { id: 10, clientName: "True Corporation", done: true, month: "MAR",      topic: "Client Kickoff Meeting",    responsibility: "Pleng",       dueDate: "2026-03-01" },
+  { id: 11, clientName: "Nike TH",          done: true, month: "MAR",      topic: "Brand Guidelines Review",   responsibility: "Tony, RK",    dueDate: "2026-03-05" },
+  { id: 12, clientName: "PTT Exploration",  done: true, month: "Internal", topic: "Internal Brief Submission", responsibility: "Boom, Point", dueDate: "2026-03-07" },
+  { id: 13, clientName: "Nike TH",          done: true, month: "MAR",      topic: "Mood Board Presentation",   responsibility: "RK",          dueDate: "2026-03-09" },
+  // 100% done client for demo
+  { id: 14, clientName: "SCB",              done: true, month: "FEB",      topic: "Campaign Wrap-up",          responsibility: "Tony, Aom",   dueDate: "2026-02-20" },
+  { id: 15, clientName: "SCB",              done: true, month: "FEB",      topic: "Final Report Delivery",     responsibility: "Boom",        dueDate: "2026-02-25" },
 ]
 
 // Mock progress stats for demo mode (before syncing real data)
@@ -131,7 +144,7 @@ function DaysLateCell({ dueDate, done, compact }) {
     const { cls, emoji } = overdueConfig(Math.abs(days))
     return (
       <td className={pad}>
-        <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
+        <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${cls} ${Math.abs(days) >= 6 ? "animate-overdue-glow" : "animate-overdue-pulse"}`}>
           {emoji && <span>{emoji}</span>}<span>{days} days</span>
         </span>
       </td>
@@ -254,8 +267,9 @@ function SkeletonRow() {
 
 // ─── TaskTable ────────────────────────────────────────────────────────────────
 
-export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark }) {
+export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark, assignments = {}, onUpdateAssignment }) {
   const [expanded, setExpanded] = useState(new Set())
+  const fileColorMap = useMemo(() => buildFileColorMap(tasks), [tasks])
 
   const toggle = (name) =>
     setExpanded((prev) => {
@@ -309,17 +323,20 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
               const hasMore = clientTasks.length > 1
               const stats   = clientStats[clientName]
 
-              const rowBg    = groupIdx % 2 === 0 ? "bg-white"             : "bg-purple-50/40"
-              const rowHover = groupIdx % 2 === 0 ? "hover:bg-purple-50/50" : "hover:bg-purple-100/40"
-              const subBg    = groupIdx % 2 === 0 ? "bg-purple-50/30"      : "bg-purple-100/30"
-              const subHover = groupIdx % 2 === 0 ? "hover:bg-purple-50/60" : "hover:bg-purple-100/50"
+              // File-level background color
+              const fc = fileColorMap[first.spreadsheetId || first.month || "unknown"]
+              const rowBg    = fc ? fc.bg : (groupIdx % 2 === 0 ? "bg-white" : "bg-purple-50/40")
+              const rowHover = "hover:brightness-[0.97]"
+              const subBg    = fc ? fc.bg : (groupIdx % 2 === 0 ? "bg-purple-50/30" : "bg-purple-100/30")
+              const subHover = "hover:brightness-[0.95]"
 
               return (
                 <Fragment key={clientName}>
                   {/* Group summary row */}
                   <tr
                     onClick={() => hasMore && toggle(clientName)}
-                    className={`transition-colors ${rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover}`}
+                    className={`transition-colors ${rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover} animate-magic-enter`}
+                    style={{ animationDelay: `${Math.min(groupIdx, 10) * 60}ms` }}
                   >
                     <MonthCell month={first.month} />
 
@@ -339,6 +356,12 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                           </span>
                           <ProgressBar stats={stats} />
                         </div>
+                        <AssignTeam
+                          clientName={clientName}
+                          assignments={assignments}
+                          onUpdate={onUpdateAssignment || (() => {})}
+                          compact
+                        />
                       </div>
                     </td>
 
@@ -354,8 +377,8 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                   </tr>
 
                   {/* Expanded sub-rows */}
-                  {isOpen && clientTasks.map((task) => (
-                    <tr key={task.id} className={`${subBg} transition-colors ${subHover}`}>
+                  {isOpen && clientTasks.map((task, subIdx) => (
+                    <tr key={task.id} className={`${subBg} transition-colors ${subHover} animate-magic-enter`} style={{ animationDelay: `${subIdx * 40}ms` }}>
                       <MonthCell month={task.month} compact />
                       <td className="py-2.5 pl-14 pr-6">
                         <span className="text-xs text-purple-200">└</span>
@@ -384,6 +407,104 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
           {groupList.length} {groupList.length === 1 ? "client" : "clients"} · {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
         </p>
       )}
+    </div>
+  )
+}
+
+// ─── Completed Clients Section ───────────────────────────────────────────────
+
+export function CompletedClients({ allTasks, assignments = {}, onUpdateAssignment }) {
+  if (!allTasks || allTasks.length === 0) return null
+
+  // Calculate stats from allTasks directly (not from clientStats which may be stale)
+  const statsMap = {}
+  allTasks.forEach((t) => {
+    if (!statsMap[t.clientName]) statsMap[t.clientName] = { total: 0, done: 0 }
+    statsMap[t.clientName].total++
+    if (t.done) statsMap[t.clientName].done++
+  })
+
+  // Find clients where 100% tasks are done
+  const completedClients = Object.entries(statsMap)
+    .filter(([, s]) => s.total > 0 && s.done >= s.total)
+    .map(([name, stats]) => {
+      const tasks = allTasks.filter((t) => t.clientName === name)
+      const dates = tasks.filter((t) => t.dueDate).map((t) => new Date(t.dueDate)).sort((a, b) => a - b)
+      return {
+        name,
+        taskCount: stats.total,
+        startDate: dates[0] || null,
+        endDate: dates[dates.length - 1] || null,
+        month: tasks[0]?.month || "",
+      }
+    })
+
+  if (completedClients.length === 0) return null
+
+  const fmt = (d) => d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—"
+  const handleAssign = onUpdateAssignment || (() => {})
+
+  return (
+    <div className="mb-6">
+      <div className="mb-3 flex items-center gap-2">
+        <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-green-500">Completed</h2>
+        <span className="text-[10px] text-green-400">{completedClients.length} clients · 100% done</span>
+      </div>
+
+      <div className="space-y-2">
+        {completedClients.map((client) => (
+          <div
+            key={client.name}
+            className="flex items-center gap-3 rounded-xl border border-green-100 bg-green-50/40 px-4 py-2.5 opacity-75 hover:opacity-100 transition-opacity"
+          >
+            {/* Check icon */}
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500 shadow-sm">
+              <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+
+            {/* Client name */}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+              <SheetTabIcon />
+              {client.name}
+            </span>
+
+            {/* Assign team */}
+            <AssignTeam
+              clientName={client.name}
+              assignments={assignments}
+              onUpdate={handleAssign}
+              compact
+            />
+
+            {/* Task count */}
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-600">
+              {client.taskCount} tasks
+            </span>
+
+            {/* Month tag */}
+            {client.month && (
+              <span className="rounded-md bg-green-100 px-2 py-0.5 text-[9px] font-black tracking-wider uppercase text-green-600">
+                {client.month}
+              </span>
+            )}
+
+            {/* Date range */}
+            <span className="ml-auto text-[10px] text-green-400">
+              {fmt(client.startDate)} — {fmt(client.endDate)}
+            </span>
+
+            {/* 100% badge */}
+            <span className="rounded-full bg-green-500 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+              100% ✓
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

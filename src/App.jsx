@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react"
-import TaskTable, { overdueTasks, upcomingTasks, mockClientStats } from "./components/TimelineTable"
+import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, CompletedClients } from "./components/TimelineTable"
+import TimelineView from "./components/TimelineView"
 import { fetchAllSheetsData, categorizeTasks, parseSheetId } from "./lib/sheetsApi"
+import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
+import TeamFilterBar from "./components/TeamFilterBar"
+import TeamManager from "./components/TeamManager"
+import DashboardView from "./components/DashboardView"
 import magicLogo from "./assets/magic-logo.svg"
 
 // ─── URL hash helpers (cross-browser persistence) ─────────────────────────────
@@ -60,7 +65,7 @@ function IconWarning({ className }) {
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-const SYNC_COOLDOWN_MS = 3 * 60 * 1000 // 3 minutes between auto-syncs
+const SYNC_COOLDOWN_MS = 5 * 60 * 1000 // 5 minutes between auto-syncs
 
 export default function App() {
   // Priority: URL hash (cross-browser) → localStorage (same browser) → empty
@@ -83,6 +88,16 @@ export default function App() {
     return ts ? new Date(ts) : null
   })
   const [copied, setCopied]         = useState(false)
+  const [viewMode, setViewMode]     = useState("table")
+  const [filterMember, setFilterMember] = useState(null) // null = all, "Tony" = filter by Tony
+  const [showTeamManager, setShowTeamManager] = useState(false)
+  const [teamMembers, setTeamMembers] = useState(() => loadTeamMembers())
+
+  const updateTeamMembers = (newMembers) => {
+    saveTeamMembers(newMembers)
+    refreshTeamMembers()
+    setTeamMembers(newMembers)
+  }
 
   // Remarks — persisted to localStorage, keyed by "ClientName::Topic"
   const [remarks, setRemarks] = useState(() => {
@@ -97,6 +112,24 @@ export default function App() {
       const next = { ...prev }
       if (value) next[key] = value
       else delete next[key]
+      return next
+    })
+  }
+
+  // Team assignments — persisted to localStorage, keyed by clientName
+  // Format: { "Nike TH": { creative: "Tony", ae: "Pleng", pm: "Boom" }, ... }
+  const [assignments, setAssignments] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("magic-assignments") || "{}") }
+    catch { return {} }
+  })
+  useEffect(() => {
+    localStorage.setItem("magic-assignments", JSON.stringify(assignments))
+  }, [assignments])
+  const updateAssignment = (clientName, value) => {
+    setAssignments((prev) => {
+      const next = { ...prev }
+      if (value && Object.keys(value).length > 0) next[clientName] = value
+      else delete next[clientName]
       return next
     })
   }
@@ -129,9 +162,69 @@ export default function App() {
     })
   }
 
-  const displayOverdue     = liveTasks ? liveTasks.overdue     : overdueTasks
-  const displayUpcoming    = liveTasks ? liveTasks.upcoming    : upcomingTasks
+  // ── Auto-assign: ดึงชื่อจาก responsibility text → assign ตาม role อัตโนมัติ ──
+  useEffect(() => {
+    const allTasks = liveTasks?.allTasks ?? [...overdueTasks, ...upcomingTasks, ...doneTasks]
+    if (allTasks.length === 0) return
+
+    // Group tasks by clientName
+    const tasksByClient = {}
+    allTasks.forEach((t) => {
+      if (!tasksByClient[t.clientName]) tasksByClient[t.clientName] = []
+      tasksByClient[t.clientName].push(t)
+    })
+
+    setAssignments((prev) => {
+      const next = { ...prev }
+      let changed = false
+
+      Object.entries(tasksByClient).forEach(([clientName, tasks]) => {
+        // Skip if client already has any manual assignment
+        if (next[clientName] && Object.keys(next[clientName]).length > 0) return
+
+        // Scan all tasks' responsibility text for this client
+        const found = {}
+        tasks.forEach((t) => {
+          const matched = matchMembers(t.responsibility)
+          matched.forEach((m) => {
+            // First match per role wins
+            if (!found[m.role]) found[m.role] = m.name
+          })
+        })
+
+        if (Object.keys(found).length > 0) {
+          next[clientName] = found
+          changed = true
+        }
+      })
+
+      return changed ? next : prev
+    })
+  }, [liveTasks]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Filter by team member ──
+  // Check BOTH: client-level assignment AND per-task responsibility
+  const memberFilter = (task) => {
+    if (!filterMember) return true
+    // 1. Check client-level assignment
+    const clientAssign = assignments[task.clientName]
+    if (clientAssign) {
+      const assignedNames = Object.values(clientAssign)
+      if (assignedNames.includes(filterMember)) return true
+    }
+    // 2. Fallback: check task responsibility text
+    const members = matchMembers(task.responsibility)
+    return members.some((m) => m.name === filterMember)
+  }
+
+  const rawOverdue     = liveTasks ? liveTasks.overdue     : overdueTasks
+  const rawUpcoming    = liveTasks ? liveTasks.upcoming    : upcomingTasks
   const displayClientStats = liveTasks ? liveTasks.clientStats : mockClientStats
+  const rawAllTasks    = liveTasks?.allTasks ?? [...overdueTasks, ...upcomingTasks, ...doneTasks]
+
+  const displayOverdue  = filterMember ? rawOverdue.filter(memberFilter)  : rawOverdue
+  const displayUpcoming = filterMember ? rawUpcoming.filter(memberFilter) : rawUpcoming
+  const displayAllTasks = filterMember ? rawAllTasks.filter(memberFilter) : rawAllTasks
 
   const addSheet = () => {
     const trimmed = inputUrl.trim()
@@ -154,8 +247,8 @@ export default function App() {
     setSyncError(null)
     try {
       const allTasks = await fetchAllSheetsData(sheets)
-      const { overdue, upcoming, clientStats } = categorizeTasks(allTasks)
-      setLiveTasks({ overdue, upcoming, clientStats })
+      const { overdue, upcoming, clientStats, allTasks: tasksWithDates } = categorizeTasks(allTasks)
+      setLiveTasks({ overdue, upcoming, clientStats, allTasks: tasksWithDates })
       setLastSynced(new Date())
     } catch (err) {
       const msg = err.message || ""
@@ -175,30 +268,70 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50/60">
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-10 border-b border-purple-100 bg-white/95 px-8 py-3 backdrop-blur-sm shadow-sm shadow-purple-100">
-        <div className="flex items-center gap-4">
-          {/* MAGIC Logo */}
-          <img
-            src={magicLogo}
-            alt="MAGIC Digital Marketing Agency"
-            className="h-12 w-12 object-contain"
-          />
-
-          {/* Divider */}
-          <div className="h-8 w-px bg-purple-200" />
-
-          {/* Title */}
-          <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xl font-black tracking-tight text-purple-900">MAGIC</span>
-              <span className="text-xl font-light text-purple-400">Marketing Timeline</span>
+      <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm shadow-[0_1px_3px_rgba(147,51,234,0.08)]">
+        {/* Single unified row */}
+        <div className="flex items-center gap-3 px-4 py-2">
+          {/* Left: Logo + Brand */}
+          <div className="flex items-center gap-3 shrink-0">
+            <img src={magicLogo} alt="MAGIC Digital Marketing Agency" className="h-8 w-8 object-contain" />
+            <div className="hidden sm:block leading-tight">
+              <span className="text-sm font-black tracking-tight text-purple-900">MAGIC</span>
+              <span className="text-sm font-light text-purple-400 ml-1">Timeline</span>
             </div>
-            <p className="text-[11px] font-medium tracking-widest text-purple-300 uppercase">Internal task tracker — Q1 2026</p>
           </div>
 
-          {/* Spacer + today badge */}
-          <div className="ml-auto">
-            <span className="rounded-full bg-purple-50 border border-purple-200 px-3 py-1 text-xs font-semibold text-purple-500">
+          <div className="h-6 w-px bg-purple-100 shrink-0" />
+
+          {/* Center: View tabs */}
+          <div className="flex items-center gap-0.5 rounded-lg bg-purple-50/80 p-0.5 shrink-0">
+            {[
+              { mode: "table", label: "Table", icon: "M3 10h18M3 6h18M3 14h18M3 18h18" },
+              { mode: "timeline", label: "Timeline", icon: "M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" },
+              { mode: "dashboard", label: "Dashboard", icon: "M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10-2a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z" },
+            ].map(({ mode, label, icon }) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                  viewMode === mode
+                    ? "bg-white text-purple-700 shadow-sm"
+                    : "text-purple-400 hover:text-purple-600"
+                }`}
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+                </svg>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-6 w-px bg-purple-100 shrink-0" />
+
+          {/* Filter chips — takes remaining space, scrollable */}
+          <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+            <TeamFilterBar activeMember={filterMember} onSelect={setFilterMember} members={teamMembers} />
+          </div>
+
+          {/* Right: actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {filterMember && (
+              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[9px] font-medium text-purple-500 hidden lg:block">
+                Filtered: <strong>{filterMember}</strong>
+              </span>
+            )}
+            <button
+              onClick={() => setShowTeamManager(true)}
+              className="flex items-center gap-1 rounded-lg border border-purple-200/60 bg-purple-50/50 px-2 py-1 text-[10px] font-semibold text-purple-400 transition hover:bg-purple-100 hover:text-purple-600 active:scale-95"
+              title="จัดการทีม"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="hidden sm:inline">จัดการทีม</span>
+            </button>
+            <span className="rounded-md bg-purple-50 px-2 py-1 text-[10px] font-semibold text-purple-500 tabular-nums hidden md:block">
               {new Date().toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
             </span>
           </div>
@@ -207,27 +340,73 @@ export default function App() {
 
       <main className="p-8 max-w-screen-2xl mx-auto">
 
-        {/* ── Overdue Tasks ───────────────────────────────────────────────────── */}
-        <TaskTable
-          title="Overdue Tasks"
-          badge="bg-red-400"
-          tasks={displayOverdue}
-          isLoading={isSyncing}
-          clientStats={displayClientStats}
-          remarks={remarks}
-          onUpdateRemark={updateRemark}
+        {/* Team Manager Modal */}
+        <TeamManager
+          members={teamMembers}
+          onUpdate={updateTeamMembers}
+          open={showTeamManager}
+          onClose={() => setShowTeamManager(false)}
         />
 
-        {/* ── Upcoming Deadlines ──────────────────────────────────────────────── */}
-        <TaskTable
-          title="Upcoming Deadlines"
-          badge="bg-purple-400"
-          tasks={displayUpcoming}
-          isLoading={isSyncing}
-          clientStats={displayClientStats}
-          remarks={remarks}
-          onUpdateRemark={updateRemark}
-        />
+        <div key={viewMode} className="animate-magic-view">
+        {viewMode === "table" ? (
+          <>
+            {/* ── Overdue Tasks ───────────────────────────────────────────────── */}
+            <TaskTable
+              title="Overdue Tasks"
+              badge="bg-red-400"
+              tasks={displayOverdue}
+              isLoading={isSyncing}
+              clientStats={displayClientStats}
+              remarks={remarks}
+              onUpdateRemark={updateRemark}
+              assignments={assignments}
+              onUpdateAssignment={updateAssignment}
+            />
+
+            {/* ── Upcoming Deadlines ──────────────────────────────────────────── */}
+            <TaskTable
+              title="Upcoming Deadlines"
+              badge="bg-purple-400"
+              tasks={displayUpcoming}
+              isLoading={isSyncing}
+              clientStats={displayClientStats}
+              remarks={remarks}
+              onUpdateRemark={updateRemark}
+              assignments={assignments}
+              onUpdateAssignment={updateAssignment}
+            />
+
+            {/* ── Completed Clients (100% done) ────────────────────────────── */}
+            <CompletedClients
+              allTasks={displayAllTasks}
+              assignments={assignments}
+              onUpdateAssignment={updateAssignment}
+            />
+          </>
+        ) : viewMode === "timeline" ? (
+          /* ── Timeline View ────────────────────────────────────────────────── */
+          <TimelineView
+            allTasks={displayAllTasks}
+            isLoading={isSyncing}
+            assignments={assignments}
+            onUpdateAssignment={updateAssignment}
+          />
+        ) : (
+          /* ── Dashboard View ───────────────────────────────────────────────── */
+          <DashboardView
+            allTasks={displayAllTasks}
+            allTasksUnfiltered={rawAllTasks}
+            overdue={displayOverdue}
+            upcoming={displayUpcoming}
+            clientStats={displayClientStats}
+            assignments={assignments}
+            onUpdateAssignment={updateAssignment}
+            onResync={syncData}
+            teamMembers={teamMembers}
+          />
+        )}
+        </div>
 
         {/* ── Connected Data Sources (bottom) ─────────────────────────────────── */}
         <div className="mt-4 rounded-2xl border border-purple-100 bg-white p-6 shadow-sm">
