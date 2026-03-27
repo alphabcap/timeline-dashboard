@@ -99,7 +99,7 @@ export default function App() {
   useEffect(() => {
     if (!gistConfigured) return
     loadTeamFromGist().then((remote) => {
-      if (!remote) return
+      if (!Array.isArray(remote) || remote.length === 0) return
       saveTeamMembers(remote)
       refreshTeamMembers()
       setTeamMembers(remote)
