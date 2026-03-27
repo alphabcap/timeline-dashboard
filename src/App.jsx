@@ -290,11 +290,11 @@ export default function App() {
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm shadow-[0_1px_3px_rgba(147,51,234,0.08)]">
-        {/* Single unified row */}
-        <div className="flex items-center gap-3 px-4 py-2">
+        {/* Row 1: Logo + View tabs + actions */}
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2">
           {/* Left: Logo + Brand */}
-          <div className="flex items-center gap-3 shrink-0">
-            <img src={magicLogo} alt="MAGIC Digital Marketing Agency" className="h-8 w-8 object-contain" />
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <img src={magicLogo} alt="MAGIC Digital Marketing Agency" className="h-7 w-7 sm:h-8 sm:w-8 object-contain" />
             <div className="hidden sm:block leading-tight">
               <span className="text-sm font-black tracking-tight text-purple-900">MAGIC</span>
               <span className="text-sm font-light text-purple-400 ml-1">Timeline</span>
@@ -313,7 +313,7 @@ export default function App() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                className={`flex items-center gap-1 rounded-md px-2 sm:px-2.5 py-1 text-[11px] font-semibold transition-all ${
                   viewMode === mode
                     ? "bg-white text-purple-700 shadow-sm"
                     : "text-purple-400 hover:text-purple-600"
@@ -322,20 +322,19 @@ export default function App() {
                 <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
                 </svg>
-                {label}
+                <span className="hidden sm:inline">{label}</span>
               </button>
             ))}
           </div>
 
-          <div className="h-6 w-px bg-purple-100 shrink-0" />
-
-          {/* Filter chips — takes remaining space, scrollable */}
-          <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+          {/* Desktop only: divider + filter chips inline */}
+          <div className="hidden sm:block h-6 w-px bg-purple-100 shrink-0" />
+          <div className="hidden sm:flex flex-1 min-w-0 overflow-x-auto scrollbar-hide">
             <TeamFilterBar activeMember={filterMember} onSelect={setFilterMember} members={teamMembers} />
           </div>
 
           {/* Right: actions */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
             {filterMember && (
               <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[9px] font-medium text-purple-500 hidden lg:block">
                 Filtered: <strong>{filterMember}</strong>
@@ -357,9 +356,14 @@ export default function App() {
             </span>
           </div>
         </div>
+
+        {/* Row 2 (mobile only): Filter chips — full width, easy to tap */}
+        <div className="sm:hidden overflow-x-auto scrollbar-hide border-t border-purple-100/60 px-3 py-1.5">
+          <TeamFilterBar activeMember={filterMember} onSelect={setFilterMember} members={teamMembers} />
+        </div>
       </header>
 
-      <main className="p-8 max-w-screen-2xl mx-auto">
+      <main className="p-3 sm:p-8 max-w-screen-2xl mx-auto">
 
         {/* Team Manager Modal */}
         <TeamManager
