@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { loadTeamMembers, ROLE_CONFIG, ROLES } from "../lib/teamConfig"
 
 function MemberOption({ member, isSelected, onToggle }) {
@@ -45,20 +46,31 @@ function MemberOption({ member, isSelected, onToggle }) {
  */
 export default function AssignTeam({ clientName, assignments, onUpdate, compact = false }) {
   const [showPopup, setShowPopup] = useState(false)
+  const btnRef = useRef(null)
   const popupRef = useRef(null)
+  const [popupPos, setPopupPos] = useState({ top: 0, left: 0 })
 
   const current = assignments[clientName] || {}
+
+  // Position popup below the button using getBoundingClientRect
+  const updatePos = useCallback(() => {
+    if (!btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    setPopupPos({ top: r.bottom + 4, left: r.left })
+  }, [])
 
   // Close on outside click
   useEffect(() => {
     if (!showPopup) return
+    updatePos()
     const handler = (e) => {
-      if (popupRef.current && !popupRef.current.contains(e.target)) setShowPopup(false)
+      if (popupRef.current?.contains(e.target)) return
+      if (btnRef.current?.contains(e.target)) return
+      setShowPopup(false)
     }
-    // Use capture phase so we catch clicks even when stopPropagation is used
     document.addEventListener("pointerdown", handler, true)
     return () => document.removeEventListener("pointerdown", handler, true)
-  }, [showPopup])
+  }, [showPopup, updatePos])
 
   const toggleMember = (role, name) => {
     const updated = { ...current }
@@ -74,9 +86,10 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
   const hasAssignment = ROLES.some((r) => current[r])
 
   return (
-    <div className="relative" ref={popupRef}>
+    <div className="relative">
       {/* Display assigned members or assign button */}
       <button
+        ref={btnRef}
         onClick={(e) => { e.stopPropagation(); setShowPopup(!showPopup) }}
         className={`flex items-center gap-1 rounded-lg transition-all ${
           compact ? "px-1 py-0.5" : "px-1.5 py-1"
@@ -113,9 +126,14 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
         )}
       </button>
 
-      {/* Popup */}
-      {showPopup && (
-        <div className="absolute z-50 top-full mt-1 left-0 w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3" onClick={(e) => e.stopPropagation()}>
+      {/* Popup — rendered via portal to escape overflow clipping */}
+      {showPopup && createPortal(
+        <div
+          ref={popupRef}
+          className="fixed z-[9999] w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3"
+          style={{ top: popupPos.top, left: popupPos.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1">
             Assign Team — {clientName}
           </div>
@@ -152,7 +170,8 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
               Clear all
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
