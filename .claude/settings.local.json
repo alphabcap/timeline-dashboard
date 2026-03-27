@@ -3,7 +3,10 @@
     "allow": [
       "mcp__Claude_Preview__preview_start",
       "Bash(git fetch:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(grep -l \"api.github.com\" dist/assets/*.js)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
