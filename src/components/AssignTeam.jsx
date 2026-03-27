@@ -11,11 +11,11 @@ function MemberOption({ member, isSelected, onToggle }) {
       className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all w-full text-left ${
         isSelected
           ? `${rc.bg} ring-1 ${rc.ring}`
-          : "hover:bg-gray-50"
+          : "hover:bg-gray-50 active:bg-gray-100"
       }`}
     >
       {member.avatar ? (
-        <img src={member.avatar} alt={member.name} className={`h-6 w-6 rounded-full object-cover ring-1 ${isSelected ? rc.ring : "ring-gray-200"}`} />
+        <img src={member.avatar} alt={member.name} className={`h-6 w-6 rounded-full object-cover ring-1 ${isSelected ? rc.ring : "ring-gray-200"} sm:h-6 sm:w-6`} />
       ) : (
         <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ring-1 ${
           isSelected ? `${rc.bg} ${rc.ring}` : "bg-gray-100 text-gray-400 ring-gray-200"
@@ -35,34 +35,87 @@ function MemberOption({ member, isSelected, onToggle }) {
   )
 }
 
+/** Shared popup content used by both desktop dropdown and mobile bottom sheet */
+function PopupContent({ clientName, current, allMembers, hasAssignment, toggleMember, onUpdate, onClose }) {
+  return (
+    <>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1">
+        Assign Team — {clientName}
+      </div>
+
+      {ROLES.map((role) => {
+        const rc = ROLE_CONFIG[role]
+        const members = allMembers.filter((m) => m.role === role)
+        return (
+          <div key={role}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${rc.bg}`}>
+                {rc.label}
+              </span>
+            </div>
+            <div className="space-y-0.5">
+              {members.map((m) => (
+                <MemberOption
+                  key={m.name}
+                  member={m}
+                  isSelected={current[role] === m.name}
+                  onToggle={(name) => toggleMember(role, name)}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {hasAssignment && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onUpdate(clientName, {}); onClose() }}
+          className="w-full rounded-lg border border-red-100 px-2 py-1.5 text-[10px] font-medium text-red-400 transition hover:bg-red-50 hover:text-red-600 active:bg-red-100"
+        >
+          Clear all
+        </button>
+      )}
+    </>
+  )
+}
+
 /**
  * Inline assignment display + popup editor.
- * Shows assigned team avatars; click to open assignment popup.
- *
- * @param {string} clientName
- * @param {object} assignments — full assignments map from App state
- * @param {function} onUpdate — (clientName, { creative: "Tony", ae: "Pleng", pm: "Boom" }) => void
- * @param {boolean} compact — smaller display for table rows
+ * Desktop: positioned dropdown via portal.
+ * Mobile (<640px): bottom sheet with backdrop.
  */
 export default function AssignTeam({ clientName, assignments, onUpdate, compact = false }) {
   const [showPopup, setShowPopup] = useState(false)
   const btnRef = useRef(null)
   const popupRef = useRef(null)
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 })
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
 
   const current = assignments[clientName] || {}
 
-  // Position popup below the button using getBoundingClientRect
-  const updatePos = useCallback(() => {
-    if (!btnRef.current) return
-    const r = btnRef.current.getBoundingClientRect()
-    setPopupPos({ top: r.bottom + 4, left: r.left })
+  // Track viewport size
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
   }, [])
 
-  // Close on outside click
+  // Position popup below the button (desktop only)
+  const updatePos = useCallback(() => {
+    if (!btnRef.current || isMobile) return
+    const r = btnRef.current.getBoundingClientRect()
+    const popupW = 224 // w-56 = 14rem = 224px
+    let left = r.left
+    if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8
+    if (left < 8) left = 8
+    setPopupPos({ top: r.bottom + 4, left })
+  }, [isMobile])
+
+  // Close on outside click (desktop) or backdrop tap (mobile handled inline)
   useEffect(() => {
     if (!showPopup) return
     updatePos()
+    if (isMobile) return // mobile uses backdrop onClick
     const handler = (e) => {
       if (popupRef.current?.contains(e.target)) return
       if (btnRef.current?.contains(e.target)) return
@@ -70,7 +123,14 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
     }
     document.addEventListener("pointerdown", handler, true)
     return () => document.removeEventListener("pointerdown", handler, true)
-  }, [showPopup, updatePos])
+  }, [showPopup, updatePos, isMobile])
+
+  // Lock body scroll on mobile when popup is open
+  useEffect(() => {
+    if (!showPopup || !isMobile) return
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = "" }
+  }, [showPopup, isMobile])
 
   const toggleMember = (role, name) => {
     const updated = { ...current }
@@ -84,6 +144,18 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
 
   const allMembers = loadTeamMembers()
   const hasAssignment = ROLES.some((r) => current[r])
+
+  const popupContent = (
+    <PopupContent
+      clientName={clientName}
+      current={current}
+      allMembers={allMembers}
+      hasAssignment={hasAssignment}
+      toggleMember={toggleMember}
+      onUpdate={onUpdate}
+      onClose={() => setShowPopup(false)}
+    />
+  )
 
   return (
     <div className="relative">
@@ -126,51 +198,82 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
         )}
       </button>
 
-      {/* Popup — rendered via portal to escape overflow clipping */}
+      {/* Popup via portal */}
       {showPopup && createPortal(
-        <div
-          ref={popupRef}
-          className="fixed z-[9999] w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3"
-          style={{ top: popupPos.top, left: popupPos.left }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-1">
-            Assign Team — {clientName}
-          </div>
-
-          {ROLES.map((role) => {
-            const rc = ROLE_CONFIG[role]
-            const members = allMembers.filter((m) => m.role === role)
-            return (
-              <div key={role}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className={`inline-block rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${rc.bg}`}>
-                    {rc.label}
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  {members.map((m) => (
-                    <MemberOption
-                      key={m.name}
-                      member={m}
-                      isSelected={current[role] === m.name}
-                      onToggle={(name) => toggleMember(role, name)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-
-          {hasAssignment && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onUpdate(clientName, {}); setShowPopup(false) }}
-              className="w-full rounded-lg border border-red-100 px-2 py-1.5 text-[10px] font-medium text-red-400 transition hover:bg-red-50 hover:text-red-600"
+        isMobile ? (
+          /* ── Mobile: bottom sheet + backdrop ── */
+          <div
+            className="fixed inset-0 z-[9999] flex flex-col justify-end"
+            onClick={(e) => { e.stopPropagation(); setShowPopup(false) }}
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/30" />
+            {/* Sheet */}
+            <div
+              ref={popupRef}
+              className="relative rounded-t-2xl border-t border-purple-200 bg-white shadow-2xl px-4 pb-6 pt-3 space-y-3 max-h-[75vh] overflow-y-auto animate-magic-enter"
+              onClick={(e) => e.stopPropagation()}
             >
-              Clear all
-            </button>
-          )}
-        </div>,
+              {/* Drag handle */}
+              <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-gray-300" />
+              {/* Done button */}
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs font-bold uppercase tracking-wider text-purple-400">
+                  Assign Team — {clientName}
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowPopup(false) }}
+                  className="rounded-lg bg-purple-100 px-3 py-1 text-xs font-bold text-purple-600 active:bg-purple-200"
+                >
+                  Done
+                </button>
+              </div>
+
+              {ROLES.map((role) => {
+                const rc = ROLE_CONFIG[role]
+                const members = allMembers.filter((m) => m.role === role)
+                return (
+                  <div key={role}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${rc.bg}`}>
+                        {rc.label}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {members.map((m) => (
+                        <MemberOption
+                          key={m.name}
+                          member={m}
+                          isSelected={current[role] === m.name}
+                          onToggle={(name) => toggleMember(role, name)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {hasAssignment && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onUpdate(clientName, {}); setShowPopup(false) }}
+                  className="w-full rounded-lg border border-red-200 px-3 py-2.5 text-xs font-medium text-red-500 transition active:bg-red-100"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* ── Desktop: positioned dropdown ── */
+          <div
+            ref={popupRef}
+            className="fixed z-[9999] w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3"
+            style={{ top: popupPos.top, left: popupPos.left }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {popupContent}
+          </div>
+        ),
         document.body
       )}
     </div>
