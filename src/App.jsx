@@ -3,6 +3,7 @@ import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, Com
 import TimelineView from "./components/TimelineView"
 import { fetchAllSheetsData, categorizeTasks, parseSheetId } from "./lib/sheetsApi"
 import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
+import { loadTeamFromGist, saveTeamToGist, gistConfigured } from "./lib/gistStorage"
 import TeamFilterBar from "./components/TeamFilterBar"
 import TeamManager from "./components/TeamManager"
 import DashboardView from "./components/DashboardView"
@@ -92,11 +93,28 @@ export default function App() {
   const [filterMember, setFilterMember] = useState(null) // null = all, "Tony" = filter by Tony
   const [showTeamManager, setShowTeamManager] = useState(false)
   const [teamMembers, setTeamMembers] = useState(() => loadTeamMembers())
+  const [gistSyncing, setGistSyncing] = useState(false)
+
+  // On first load, pull latest team data from Gist (shared across all users)
+  useEffect(() => {
+    if (!gistConfigured) return
+    loadTeamFromGist().then((remote) => {
+      if (!remote) return
+      saveTeamMembers(remote)
+      refreshTeamMembers()
+      setTeamMembers(remote)
+    })
+  }, [])
 
   const updateTeamMembers = (newMembers) => {
     saveTeamMembers(newMembers)
     refreshTeamMembers()
     setTeamMembers(newMembers)
+    // Persist to Gist so all users stay in sync
+    if (gistConfigured) {
+      setGistSyncing(true)
+      saveTeamToGist(newMembers).finally(() => setGistSyncing(false))
+    }
   }
 
   // Remarks — persisted to localStorage, keyed by "ClientName::Topic"
@@ -323,7 +341,7 @@ export default function App() {
             <button
               onClick={() => setShowTeamManager(true)}
               className="flex items-center gap-1 rounded-lg border border-purple-200/60 bg-purple-50/50 px-2 py-1 text-[10px] font-semibold text-purple-400 transition hover:bg-purple-100 hover:text-purple-600 active:scale-95"
-              title="จัดการทีม"
+              title={gistSyncing ? "กำลังบันทึก..." : "จัดการทีม"}
             >
               <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
