@@ -3,7 +3,7 @@ import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, Com
 import TimelineView from "./components/TimelineView"
 import { fetchAllSheetsData, categorizeTasks, parseSheetId } from "./lib/sheetsApi"
 import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
-import { loadTeamFromGist, saveTeamToGist, gistConfigured } from "./lib/gistStorage"
+import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, gistConfigured } from "./lib/gistStorage"
 import TeamFilterBar from "./components/TeamFilterBar"
 import TeamManager from "./components/TeamManager"
 import DashboardView from "./components/DashboardView"
@@ -95,7 +95,7 @@ export default function App() {
   const [teamMembers, setTeamMembers] = useState(() => loadTeamMembers())
   const [gistSyncing, setGistSyncing] = useState(false)
 
-  // On first load, pull latest team data from Gist (shared across all users)
+  // On first load, pull latest team + assignments from Gist (shared across all users)
   useEffect(() => {
     if (!gistConfigured) return
     loadTeamFromGist().then((remote) => {
@@ -104,19 +104,19 @@ export default function App() {
       refreshTeamMembers()
       setTeamMembers(remote)
     })
+    loadAssignmentsFromGist().then((remote) => {
+      if (!remote || typeof remote !== "object" || Object.keys(remote).length === 0) return
+      setAssignments(remote)
+    })
   }, [])
 
   const updateTeamMembers = (newMembers) => {
     saveTeamMembers(newMembers)
     refreshTeamMembers()
     setTeamMembers(newMembers)
-    // Persist to Gist so all users stay in sync
-    console.log("[App] updateTeamMembers called, gistConfigured:", gistConfigured)
     if (gistConfigured) {
       setGistSyncing(true)
-      saveTeamToGist(newMembers)
-        .then((ok) => console.log("[App] Gist save result:", ok))
-        .finally(() => setGistSyncing(false))
+      saveTeamToGist(newMembers).finally(() => setGistSyncing(false))
     }
   }
 
@@ -151,6 +151,7 @@ export default function App() {
       const next = { ...prev }
       if (value && Object.keys(value).length > 0) next[clientName] = value
       else delete next[clientName]
+      if (gistConfigured) saveAssignmentsToGist(next)
       return next
     })
   }

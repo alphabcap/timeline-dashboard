@@ -9,7 +9,8 @@
 
 const GIST_ID      = import.meta.env.VITE_GIST_ID
 const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN
-const FILENAME     = "magic-team.json"
+const TEAM_FILE    = "magic-team.json"
+const ASSIGN_FILE  = "magic-assignments.json"
 const API_BASE     = "https://api.github.com/gists"
 
 function authHeaders() {
@@ -18,42 +19,54 @@ function authHeaders() {
   return h
 }
 
-/** Fetch team members from Gist. Returns array or null on failure. */
-export async function loadTeamFromGist() {
+/** Read a single file from the Gist. Returns parsed JSON or null. */
+async function readGistFile(filename) {
   if (!GIST_ID) return null
   try {
     const res = await fetch(`${API_BASE}/${GIST_ID}`, { headers: authHeaders() })
     if (!res.ok) return null
-    const gist    = await res.json()
-    const content = gist.files?.[FILENAME]?.content
+    const gist = await res.json()
+    const content = gist.files?.[filename]?.content
     if (!content) return null
     return JSON.parse(content)
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-/** Save team members to Gist. Returns true on success. */
-export async function saveTeamToGist(members) {
-  console.log("[Gist] saveTeamToGist called", { GIST_ID: !!GIST_ID, GITHUB_TOKEN: !!GITHUB_TOKEN, memberCount: members?.length })
-  if (!GIST_ID || !GITHUB_TOKEN) {
-    console.warn("[Gist] Missing GIST_ID or GITHUB_TOKEN — cannot save")
-    return false
-  }
+/** Write one or more files to the Gist. Returns true on success. */
+async function writeGistFiles(files) {
+  if (!GIST_ID || !GITHUB_TOKEN) return false
   try {
+    const body = { files: {} }
+    for (const [name, data] of Object.entries(files)) {
+      body.files[name] = { content: JSON.stringify(data) }
+    }
     const res = await fetch(`${API_BASE}/${GIST_ID}`, {
-      method:  "PATCH",
+      method: "PATCH",
       headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        files: { [FILENAME]: { content: JSON.stringify(members) } },
-      }),
+      body: JSON.stringify(body),
     })
-    console.log("[Gist] PATCH response:", res.status)
     return res.ok
-  } catch (err) {
-    console.error("[Gist] Save failed:", err)
-    return false
-  }
+  } catch { return false }
+}
+
+// ── Team members ─────────────────────────────────────────────────────────────
+
+export async function loadTeamFromGist() {
+  return readGistFile(TEAM_FILE)
+}
+
+export async function saveTeamToGist(members) {
+  return writeGistFiles({ [TEAM_FILE]: members })
+}
+
+// ── Assignments ──────────────────────────────────────────────────────────────
+
+export async function loadAssignmentsFromGist() {
+  return readGistFile(ASSIGN_FILE)
+}
+
+export async function saveAssignmentsToGist(assignments) {
+  return writeGistFiles({ [ASSIGN_FILE]: assignments })
 }
 
 export const gistConfigured = Boolean(GIST_ID && GITHUB_TOKEN)
