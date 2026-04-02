@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react"
 import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, CompletedClients } from "./components/TimelineTable"
 import { fetchAllSheetsData, categorizeTasks, parseSheetId, updateTaskCompletion } from "./lib/sheetsApi"
 import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
-import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, gistConfigured } from "./lib/gistStorage"
+import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, loadRemarksFromGist, saveRemarksToGist, gistConfigured } from "./lib/gistStorage"
 import TeamFilterBar from "./components/TeamFilterBar"
 import TeamManager from "./components/TeamManager"
 import DashboardView from "./components/DashboardView"
@@ -94,8 +94,12 @@ export default function App() {
   const [teamMembers, setTeamMembers] = useState(() => loadTeamMembers())
   const [gistSyncing, setGistSyncing] = useState(false)
 
+  // Guards: skip debounced Gist save when the change came FROM Gist (not from user)
+  const skipGistSaveRef = useRef(false)
+  const skipRemarksSaveRef = useRef(false)
+
   // On first load, pull latest team + assignments from Gist (shared across all users)
-  // Gist is the source of truth — overwrite local with remote
+  // Gist is the source of truth — OVERWRITE local (not merge)
   useEffect(() => {
     if (!gistConfigured) return
     loadTeamFromGist().then((remote) => {
@@ -106,10 +110,16 @@ export default function App() {
     }).catch(() => console.warn("[Gist] Failed to load team — using local cache"))
 
     loadAssignmentsFromGist().then((remote) => {
-      if (!remote || typeof remote !== "object" || Object.keys(remote).length === 0) return
-      // Merge: remote wins for existing keys, keep local-only keys
-      setAssignments((local) => ({ ...local, ...remote }))
+      if (!remote || typeof remote !== "object") return
+      skipGistSaveRef.current = true
+      setAssignments(remote)
     }).catch(() => console.warn("[Gist] Failed to load assignments — using local cache"))
+
+    loadRemarksFromGist().then((remote) => {
+      if (!remote || typeof remote !== "object") return
+      skipRemarksSaveRef.current = true
+      setRemarks(remote)
+    }).catch(() => console.warn("[Gist] Failed to load remarks — using local cache"))
   }, [])
 
   const updateTeamMembers = (newMembers) => {
@@ -126,7 +136,7 @@ export default function App() {
     }
   }
 
-  // Remarks — persisted to localStorage, keyed by "ClientName::Topic"
+  // Remarks — persisted to localStorage + Gist, keyed by "ClientName::Topic"
   const [remarks, setRemarks] = useState(() => {
     try { return JSON.parse(localStorage.getItem("magic-remarks") || "{}") }
     catch { return {} }
@@ -142,6 +152,20 @@ export default function App() {
       return next
     })
   }
+  // Auto-sync remarks to Gist whenever they change (debounced)
+  const remarksRef = useRef(remarks)
+  remarksRef.current = remarks
+  useEffect(() => {
+    if (!gistConfigured) return
+    if (skipRemarksSaveRef.current) {
+      skipRemarksSaveRef.current = false
+      return
+    }
+    const timer = setTimeout(() => {
+      saveRemarksToGist(remarksRef.current)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [remarks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Team assignments — persisted to localStorage, keyed by clientName
   // Format: { "Nike TH": { creative: "Tony", ae: "Pleng", pm: "Boom" }, ... }
@@ -161,10 +185,15 @@ export default function App() {
     })
   }
   // Auto-sync assignments to Gist whenever they change (debounced)
+  // Skips save when the change came from Gist load (avoids writing stale data back)
   const assignmentsRef = useRef(assignments)
   assignmentsRef.current = assignments
   useEffect(() => {
     if (!gistConfigured) return
+    if (skipGistSaveRef.current) {
+      skipGistSaveRef.current = false
+      return
+    }
     const timer = setTimeout(() => {
       saveAssignmentsToGist(assignmentsRef.current)
     }, 500)
@@ -271,6 +300,9 @@ export default function App() {
         }
       })
 
+      // Auto-assign is local inference — don't push back to Gist
+      // (only manual assignment changes should sync to Gist)
+      if (changed) skipGistSaveRef.current = true
       return changed ? next : prev
     })
   }, [liveTasks]) // eslint-disable-line react-hooks/exhaustive-deps
