@@ -338,7 +338,7 @@ export async function fetchAllSheetsData(sheetList) {
     // 2️⃣  Batch-fetch ALL tabs in one API call (instead of N separate calls)
     //   UNFORMATTED_VALUE → booleans = true/false, dates = serial number
     const tabNames = meta.sheets.map((t) => t.properties.title)
-    const ranges = tabNames.map((t) => `ranges=${encodeURIComponent(`${t}!A2:D`)}`).join("&")
+    const ranges = tabNames.map((t) => `ranges=${encodeURIComponent(`${t}!A2:E`)}`).join("&")
     const batchUrl = `${BASE_URL}/${spreadsheetId}/values:batchGet?${ranges}&key=${apiKey}&valueRenderOption=UNFORMATTED_VALUE`
 
     const batchRes = await fetch(batchUrl)
@@ -350,13 +350,13 @@ export async function fetchAllSheetsData(sheetList) {
     }
 
     for (const valueRange of batchData.valueRanges ?? []) {
-      // Extract tab name from range string e.g. "'Tab Name'!A2:D" or "Tab!A2:D"
+      // Extract tab name from range string e.g. "'Tab Name'!A2:E" or "Tab!A2:E"
       const rangeStr = valueRange.range || ""
       const tabTitle = rangeStr.replace(/!.*$/, "").replace(/^'|'$/g, "")
 
-      for (const row of valueRange.values ?? []) {
-        // A=status(bool)  B=topic  C=responsibility  D=dueDate
-        const [statusRaw, topic, responsibility, dueDateRaw] = row
+      for (const [rowIdx, row] of (valueRange.values ?? []).entries()) {
+        // A=status(bool)  B=topic  C=responsibility  D=dueDate  E=actualSubmit
+        const [statusRaw, topic, responsibility, dueDateRaw, actualSubmitRaw] = row
 
         if (!topic?.toString().trim()) continue   // skip blank rows
 
@@ -376,6 +376,8 @@ export async function fetchAllSheetsData(sheetList) {
           topic:          topic.toString().trim(),
           responsibility: (responsibility ?? "").toString().trim(),
           dueDate:        parsedDate,
+          rowIndex:       rowIdx + 2,  // +2: range starts at row 2 (row 1 = header)
+          actualSubmit:   parseDueDate(actualSubmitRaw),
         })
       }
     }
@@ -520,4 +522,29 @@ export function prepareTimelineData(allTasks) {
     },
     totalDays,
   }
+}
+
+// ── Task Completion Write-back ────────────────────────────────────────────────
+
+/**
+ * Write task completion status back to Google Sheet via Apps Script Web App.
+ * Requires VITE_APPS_SCRIPT_URL env var to be set.
+ *
+ * Updates:
+ *   Column A (row rowIndex): TRUE / FALSE
+ *   Column E (row rowIndex): actualSubmit date string, or cleared
+ */
+export async function updateTaskCompletion({ spreadsheetId, tabName, rowIndex, done, actualSubmit }) {
+  const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
+  if (!scriptUrl) return false
+  try {
+    const res = await fetch(scriptUrl, {
+      method: "POST",
+      // text/plain avoids CORS preflight (required for Google Apps Script)
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ spreadsheetId, tabName, rowIndex, done, actualSubmit }),
+      redirect: "follow",
+    })
+    return res.ok
+  } catch { return false }
 }

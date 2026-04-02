@@ -100,29 +100,58 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
     return () => window.removeEventListener("resize", onResize)
   }, [])
 
-  // Position popup below the button (desktop only)
+  // Position popup relative to the button (desktop only)
+  // Checks vertical overflow: if no room below, show above
   const updatePos = useCallback(() => {
     if (!btnRef.current || isMobile) return
     const r = btnRef.current.getBoundingClientRect()
     const popupW = 224 // w-56 = 14rem = 224px
+    const popupH = popupRef.current?.offsetHeight || 320
+
     let left = r.left
     if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8
     if (left < 8) left = 8
-    setPopupPos({ top: r.bottom + 4, left })
+
+    // Prefer below; if not enough room, show above
+    const spaceBelow = window.innerHeight - r.bottom
+    const spaceAbove = r.top
+    let top
+    if (spaceBelow >= popupH + 8 || spaceBelow >= spaceAbove) {
+      top = r.bottom + 4
+    } else {
+      top = r.top - popupH - 4
+    }
+    // Clamp to viewport
+    top = Math.max(8, Math.min(top, window.innerHeight - popupH - 8))
+
+    setPopupPos({ top, left })
   }, [isMobile])
 
   // Close on outside click (desktop) or backdrop tap (mobile handled inline)
+  // Also reposition on scroll/resize so popup tracks the button
   useEffect(() => {
     if (!showPopup) return
-    updatePos()
+    // Delay first position calc so popupRef.current has rendered (for height measurement)
+    requestAnimationFrame(updatePos)
     if (isMobile) return // mobile uses backdrop onClick
+
     const handler = (e) => {
       if (popupRef.current?.contains(e.target)) return
       if (btnRef.current?.contains(e.target)) return
       setShowPopup(false)
     }
     document.addEventListener("pointerdown", handler, true)
-    return () => document.removeEventListener("pointerdown", handler, true)
+
+    // Reposition on scroll/resize so it doesn't drift
+    const reposition = () => updatePos()
+    window.addEventListener("scroll", reposition, true)
+    window.addEventListener("resize", reposition)
+
+    return () => {
+      document.removeEventListener("pointerdown", handler, true)
+      window.removeEventListener("scroll", reposition, true)
+      window.removeEventListener("resize", reposition)
+    }
   }, [showPopup, updatePos, isMobile])
 
   // Lock body scroll on mobile when popup is open
@@ -267,7 +296,7 @@ export default function AssignTeam({ clientName, assignments, onUpdate, compact 
           /* ── Desktop: positioned dropdown ── */
           <div
             ref={popupRef}
-            className="fixed z-[9999] w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3"
+            className="fixed z-[9999] w-56 rounded-xl border border-purple-200 bg-white shadow-lg p-3 space-y-3 max-h-[70vh] overflow-y-auto"
             style={{ top: popupPos.top, left: popupPos.left }}
             onClick={(e) => e.stopPropagation()}
           >

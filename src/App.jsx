@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, CompletedClients } from "./components/TimelineTable"
-import TimelineView from "./components/TimelineView"
-import { fetchAllSheetsData, categorizeTasks, parseSheetId } from "./lib/sheetsApi"
+import { fetchAllSheetsData, categorizeTasks, parseSheetId, updateTaskCompletion } from "./lib/sheetsApi"
 import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
 import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, gistConfigured } from "./lib/gistStorage"
 import TeamFilterBar from "./components/TeamFilterBar"
@@ -96,6 +95,7 @@ export default function App() {
   const [gistSyncing, setGistSyncing] = useState(false)
 
   // On first load, pull latest team + assignments from Gist (shared across all users)
+  // Gist is the source of truth — overwrite local with remote
   useEffect(() => {
     if (!gistConfigured) return
     loadTeamFromGist().then((remote) => {
@@ -103,11 +103,13 @@ export default function App() {
       saveTeamMembers(remote)
       refreshTeamMembers()
       setTeamMembers(remote)
-    })
+    }).catch(() => console.warn("[Gist] Failed to load team — using local cache"))
+
     loadAssignmentsFromGist().then((remote) => {
       if (!remote || typeof remote !== "object" || Object.keys(remote).length === 0) return
-      setAssignments(remote)
-    })
+      // Merge: remote wins for existing keys, keep local-only keys
+      setAssignments((local) => ({ ...local, ...remote }))
+    }).catch(() => console.warn("[Gist] Failed to load assignments — using local cache"))
   }, [])
 
   const updateTeamMembers = (newMembers) => {
@@ -116,7 +118,11 @@ export default function App() {
     setTeamMembers(newMembers)
     if (gistConfigured) {
       setGistSyncing(true)
-      saveTeamToGist(newMembers).finally(() => setGistSyncing(false))
+      saveTeamToGist(newMembers)
+        .then((ok) => {
+          if (!ok) console.warn("[Gist] Failed to save team members — will retry on next update")
+        })
+        .finally(() => setGistSyncing(false))
     }
   }
 
@@ -151,8 +157,53 @@ export default function App() {
       const next = { ...prev }
       if (value && Object.keys(value).length > 0) next[clientName] = value
       else delete next[clientName]
-      if (gistConfigured) saveAssignmentsToGist(next)
       return next
+    })
+  }
+  // Auto-sync assignments to Gist whenever they change (debounced)
+  const assignmentsRef = useRef(assignments)
+  assignmentsRef.current = assignments
+  useEffect(() => {
+    if (!gistConfigured) return
+    const timer = setTimeout(() => {
+      saveAssignmentsToGist(assignmentsRef.current)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [assignments]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Toggle task done/not-done — optimistic update + write to Google Sheet via Apps Script
+  const toggleTask = (task, newDone) => {
+    const newActualSubmit = newDone ? new Date().toISOString().split("T")[0] : null
+
+    // Optimistic update: task stays visible in its section, status icon toggles
+    setLiveTasks((prev) => {
+      if (!prev) return prev
+      // Match by rowIndex (unique per row in the sheet) — each task is independent
+      const match = (t) => {
+        if (task.rowIndex != null) {
+          return t.spreadsheetId === task.spreadsheetId &&
+                 t.clientName === task.clientName &&
+                 t.rowIndex === task.rowIndex
+        }
+        return t.id === task.id  // fallback for mock data
+      }
+      const updateList = (list) =>
+        list.map((t) => match(t) ? { ...t, done: newDone, actualSubmit: newActualSubmit } : t)
+      return {
+        ...prev,
+        overdue:  updateList(prev.overdue),
+        upcoming: updateList(prev.upcoming),
+        allTasks: updateList(prev.allTasks),
+      }
+    })
+
+    // Background: write Column A + Column E back to Google Sheet
+    updateTaskCompletion({
+      spreadsheetId: task.spreadsheetId,
+      tabName:       task.clientName,
+      rowIndex:      task.rowIndex,
+      done:          newDone,
+      actualSubmit:  newActualSubmit,
     })
   }
 
@@ -308,7 +359,6 @@ export default function App() {
           <div className="flex items-center gap-0.5 rounded-lg bg-purple-50/80 p-0.5 shrink-0">
             {[
               { mode: "table", label: "Table", icon: "M3 10h18M3 6h18M3 14h18M3 18h18" },
-              { mode: "timeline", label: "Timeline", icon: "M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" },
               { mode: "dashboard", label: "Dashboard", icon: "M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10-2a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z" },
             ].map(({ mode, label, icon }) => (
               <button
@@ -388,6 +438,7 @@ export default function App() {
               onUpdateRemark={updateRemark}
               assignments={assignments}
               onUpdateAssignment={updateAssignment}
+              onToggle={toggleTask}
             />
 
             {/* ── Upcoming Deadlines ──────────────────────────────────────────── */}
@@ -401,6 +452,7 @@ export default function App() {
               onUpdateRemark={updateRemark}
               assignments={assignments}
               onUpdateAssignment={updateAssignment}
+              onToggle={toggleTask}
             />
 
             {/* ── Completed Clients (100% done) ────────────────────────────── */}
@@ -410,14 +462,6 @@ export default function App() {
               onUpdateAssignment={updateAssignment}
             />
           </>
-        ) : viewMode === "timeline" ? (
-          /* ── Timeline View ────────────────────────────────────────────────── */
-          <TimelineView
-            allTasks={displayAllTasks}
-            isLoading={isSyncing}
-            assignments={assignments}
-            onUpdateAssignment={updateAssignment}
-          />
         ) : (
           /* ── Dashboard View ───────────────────────────────────────────────── */
           <DashboardView

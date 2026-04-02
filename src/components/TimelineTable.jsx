@@ -102,24 +102,42 @@ function MonthCell({ month, compact }) {
   )
 }
 
-function StatusCell({ done, compact }) {
+function StatusToggleCell({ task, onToggle, compact }) {
   const size = compact ? "h-6 w-6" : "h-7 w-7"
   const icon = compact ? "h-3.5 w-3.5" : "h-4 w-4"
+  const handleClick = (e) => {
+    e.stopPropagation()
+    if (onToggle) onToggle(task, !task.done)
+  }
   return (
-    <td className={compact ? "px-6 py-2.5" : "px-6 py-4"}>
-      {done ? (
-        <span className={`inline-flex items-center justify-center rounded-full bg-green-100 ${size}`}>
+    <td className={compact ? "px-4 py-2.5" : "px-4 py-4"}>
+      <button
+        onClick={handleClick}
+        title={task.done ? "คลิกเพื่อยกเลิก" : "คลิกเพื่อ Mark Done"}
+        className={`inline-flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-95 cursor-pointer ${size} ${
+          task.done ? "bg-green-100 hover:bg-green-200" : "bg-red-100 hover:bg-red-200"
+        }`}
+      >
+        {task.done ? (
           <svg className={`text-green-600 ${icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
-        </span>
-      ) : (
-        <span className={`inline-flex items-center justify-center rounded-full bg-red-100 ${size}`}>
+        ) : (
           <svg className={`text-red-400 ${icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
-        </span>
-      )}
+        )}
+      </button>
+    </td>
+  )
+}
+
+function ActualSubmitCell({ actualSubmit, compact }) {
+  const pad = compact ? "px-5 py-2.5" : "px-5 py-4"
+  if (!actualSubmit) return <td className={`${pad} text-gray-200 text-xs`}>—</td>
+  return (
+    <td className={pad}>
+      <span className="text-xs font-medium text-green-600">{fmtDate(actualSubmit)}</span>
     </td>
   )
 }
@@ -254,11 +272,13 @@ function ProgressBar({ stats }) {
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
+      <td className="px-4 py-4"><div className="h-7 w-7 rounded-full bg-red-100" /></td>
       <td className="px-5 py-4"><div className="h-6 w-16 rounded-lg bg-purple-100" /></td>
       <td className="px-6 py-4"><div className="h-5 w-32 rounded-full bg-purple-100" /></td>
       <td className="px-6 py-4"><div className="h-4 w-48 rounded bg-gray-200" /></td>
       <td className="px-6 py-4"><div className="h-4 w-32 rounded bg-gray-200" /></td>
       <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-gray-200" /></td>
+      <td className="px-5 py-4"><div className="h-4 w-24 rounded bg-gray-100" /></td>
       <td className="px-6 py-4"><div className="h-6 w-20 rounded-full bg-gray-200" /></td>
       <td className="px-4 py-4"><div className="h-4 w-24 rounded bg-gray-100" /></td>
     </tr>
@@ -267,7 +287,7 @@ function SkeletonRow() {
 
 // ─── TaskTable ────────────────────────────────────────────────────────────────
 
-export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark, assignments = {}, onUpdateAssignment }) {
+export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark, assignments = {}, onUpdateAssignment, onToggle }) {
   const [expanded, setExpanded] = useState(new Set())
   const fileColorMap = useMemo(() => buildFileColorMap(tasks), [tasks])
 
@@ -294,6 +314,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-purple-100 bg-purple-50 text-left text-[11px] font-bold uppercase tracking-wider text-purple-400">
+              <th className="px-4 py-4">Status</th>
               <th className="px-5 py-4">Month</th>
               <th className="px-6 py-4">
                 <span className="flex items-center gap-1.5"><SheetTabIcon />Client Name</span>
@@ -301,6 +322,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
               <th className="px-6 py-4">Content / Topic</th>
               <th className="px-6 py-4">Responsibility</th>
               <th className="px-6 py-4">Due Date</th>
+              <th className="px-5 py-4">Actual Submit</th>
               <th className="px-6 py-4">Days Late</th>
               <th className="px-4 py-4">Remark</th>
             </tr>
@@ -312,7 +334,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
 
             ) : tasks.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-sm text-purple-200">
+                <td colSpan={9} className="px-6 py-10 text-center text-sm text-purple-200">
                   No tasks found — sync a Google Sheet to load data
                 </td>
               </tr>
@@ -338,6 +360,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                     className={`transition-colors ${rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover} animate-magic-enter`}
                     style={{ animationDelay: `${Math.min(groupIdx, 10) * 60}ms` }}
                   >
+                    <StatusToggleCell task={first} onToggle={onToggle} />
                     <MonthCell month={first.month} />
 
                     {/* Client Name + Progress Bar */}
@@ -368,6 +391,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                     <td className="px-6 py-4 font-medium text-gray-800">{first.topic}</td>
                     <td className="px-6 py-4 text-gray-500">{first.responsibility}</td>
                     <td className="px-6 py-4 text-gray-500">{fmtDate(first.dueDate)}</td>
+                    <ActualSubmitCell actualSubmit={first.actualSubmit} />
                     <DaysLateCell dueDate={first.dueDate} done={first.done} />
                     <RemarkCell
                       taskKey={`${clientName}::${first.topic}`}
@@ -379,6 +403,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                   {/* Expanded sub-rows */}
                   {isOpen && clientTasks.map((task, subIdx) => (
                     <tr key={task.id} className={`${subBg} transition-colors ${subHover} animate-magic-enter`} style={{ animationDelay: `${subIdx * 40}ms` }}>
+                      <StatusToggleCell task={task} onToggle={onToggle} compact />
                       <MonthCell month={task.month} compact />
                       <td className="py-2.5 pl-14 pr-6">
                         <span className="text-xs text-purple-200">└</span>
@@ -386,6 +411,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                       <td className="px-6 py-2.5 text-gray-600">{task.topic}</td>
                       <td className="px-6 py-2.5 text-gray-400">{task.responsibility}</td>
                       <td className="px-6 py-2.5 text-gray-400">{fmtDate(task.dueDate)}</td>
+                      <ActualSubmitCell actualSubmit={task.actualSubmit} compact />
                       <DaysLateCell dueDate={task.dueDate} done={task.done} compact />
                       <RemarkCell
                         taskKey={`${clientName}::${task.topic}`}

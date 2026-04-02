@@ -19,6 +19,19 @@ function authHeaders() {
   return h
 }
 
+// ── Write Queue ──────────────────────────────────────────────────────────────
+// Serialize all Gist writes so concurrent saves don't race each other.
+// Each write waits for the previous one to finish before starting.
+
+let _writeQueue = Promise.resolve()
+
+function enqueueWrite(fn) {
+  _writeQueue = _writeQueue.then(fn, fn)  // run fn regardless of prior success/failure
+  return _writeQueue
+}
+
+// ── Core Read / Write ────────────────────────────────────────────────────────
+
 /** Read a single file from the Gist. Returns parsed JSON or null. */
 async function readGistFile(filename) {
   if (!GIST_ID) return null
@@ -32,21 +45,46 @@ async function readGistFile(filename) {
   } catch { return null }
 }
 
-/** Write one or more files to the Gist. Returns true on success. */
+/**
+ * Write one or more files to the Gist (queued + retry).
+ * Returns true on success, throws on final failure.
+ */
 async function writeGistFiles(files) {
   if (!GIST_ID || !GITHUB_TOKEN) return false
-  try {
+
+  return enqueueWrite(async () => {
     const body = { files: {} }
     for (const [name, data] of Object.entries(files)) {
       body.files[name] = { content: JSON.stringify(data) }
     }
-    const res = await fetch(`${API_BASE}/${GIST_ID}`, {
-      method: "PATCH",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    return res.ok
-  } catch { return false }
+
+    // Retry up to 2 times on failure
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${API_BASE}/${GIST_ID}`, {
+          method: "PATCH",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        if (res.ok) return true
+        // Rate limit → wait and retry
+        if (res.status === 429 && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+          continue
+        }
+        console.warn(`[Gist] Write failed: ${res.status} ${res.statusText}`)
+        return false
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+          continue
+        }
+        console.warn("[Gist] Write failed after retries:", err)
+        return false
+      }
+    }
+    return false
+  })
 }
 
 // ── Team members ─────────────────────────────────────────────────────────────
