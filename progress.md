@@ -141,6 +141,13 @@ src/
 - Left border stripe matches sheet color for quick visual identification
 - **Files**: `sheetsApi.js` (FILE_COLORS with bg/sub/stripe), `TimelineTable.jsx` (applies border-l-4 + stripe)
 
+### 12. Batched Gist Writes (Rate Limit Protection)
+- Assignments, remarks, and priorities use `scheduleBatchWrite` instead of writing immediately
+- Collects all pending file changes for 1.5s, then writes all files in a single API call
+- Example: changing priority on 5 tasks quickly = 1 API call instead of 5
+- Team members still write immediately (infrequent changes)
+- **File**: `gistStorage.js`
+
 ---
 
 ## Known Issues & Gotchas
@@ -150,11 +157,14 @@ src/
 - Two Vercel projects exist: `9t9j` (original) and `rose` (primary). Both are now connected to GitHub.
 - `VITE_*` env vars were once swapped in Vercel dashboard (GIST_ID had token value and vice versa) — always double-check.
 
-### GitHub Tokens
+### GitHub Tokens & Rate Limits
 - **Git push** uses PAT with `repo` scope (embedded in remote URL)
 - **Gist API** uses PAT with `gist` scope (stored as `VITE_GITHUB_TOKEN`)
 - These can be the same token if it has both scopes
 - Token must be from `alphabcap` account (Gist owner) for write access
+- **Rate limit**: 5,000 requests/hour. Writes use batched `scheduleBatchWrite` to minimize calls
+- **If rate limited (403)**: Wait ~1 hour for reset, or generate a new PAT to get a fresh limit
+- **Correct Gist ID**: `753047ac8427650f4fdf7c31fdd06c63` (the one with `magic-assignments.json` + 4 files)
 
 ### Gist File Names
 - Team members: `magic-team.json` (array of `{ name, role, avatar }`)
@@ -166,11 +176,10 @@ src/
 
 ## Pending / Future Work
 
-- [ ] **Remove debug console.logs** — `gistStorage.js` and `App.jsx` had debug logging (mostly cleaned up, verify none remain)
+- [ ] **Remove debug console.logs** — `TimelineTable.jsx` has `[Priority]` debug log (line 203), remove after confirming Gist sync works
 - [ ] **Conflict resolution for Gist sync** — Currently last-write-wins. If two users update simultaneously, one write is lost. Could add timestamp-based merge.
 - [ ] **Image crop for avatar uploads** — `ImageCropper.jsx` exists but may need polish
 - [ ] **Auto-assign from responsibility text** — Parse Google Sheet "responsibility" column to auto-suggest team assignments
-- [ ] **Remarks sync to Gist** — Remarks are still localStorage-only, could be synced like assignments
 - [ ] **Offline support** — Service worker for caching when network is unavailable
 
 ---
