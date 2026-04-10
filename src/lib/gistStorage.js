@@ -89,6 +89,24 @@ async function writeGistFiles(files) {
   })
 }
 
+// ── Batched Write ────────────────────────────────────────────────────────────
+// Collects all pending file changes and writes them in a single API call.
+// This drastically reduces API usage: e.g. changing priority + remark = 1 call instead of 2.
+
+let _pendingFiles = {}
+let _batchTimer = null
+
+function scheduleBatchWrite(filename, data) {
+  _pendingFiles[filename] = data
+  if (_batchTimer) clearTimeout(_batchTimer)
+  _batchTimer = setTimeout(() => {
+    const files = { ..._pendingFiles }
+    _pendingFiles = {}
+    _batchTimer = null
+    writeGistFiles(files)
+  }, 1500)  // wait 1.5s to collect more changes before writing
+}
+
 // ── Team members ─────────────────────────────────────────────────────────────
 
 export async function loadTeamFromGist() {
@@ -106,7 +124,7 @@ export async function loadAssignmentsFromGist() {
 }
 
 export async function saveAssignmentsToGist(assignments) {
-  return writeGistFiles({ [ASSIGN_FILE]: assignments })
+  scheduleBatchWrite(ASSIGN_FILE, assignments)
 }
 
 // ── Remarks ─────────────────────────────────────────────────────────────────
@@ -116,7 +134,7 @@ export async function loadRemarksFromGist() {
 }
 
 export async function saveRemarksToGist(remarks) {
-  return writeGistFiles({ [REMARKS_FILE]: remarks })
+  scheduleBatchWrite(REMARKS_FILE, remarks)
 }
 
 // ── Priorities ──────────────────────────────────────────────────────────────
@@ -126,7 +144,7 @@ export async function loadPrioritiesFromGist() {
 }
 
 export async function savePrioritiesToGist(priorities) {
-  return writeGistFiles({ [PRIORITIES_FILE]: priorities })
+  scheduleBatchWrite(PRIORITIES_FILE, priorities)
 }
 
 export const gistConfigured = Boolean(GIST_ID && GITHUB_TOKEN)
