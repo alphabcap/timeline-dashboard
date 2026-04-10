@@ -312,6 +312,8 @@ export async function fetchAllSheetsData(sheetList) {
 
   const allTasks = []
   let nextId = 1
+  const seenTabs = new Set()          // deduplicate same tab name across spreadsheets
+  const seenSpreadsheets = new Set()  // deduplicate same spreadsheet fetched twice
 
   for (const sheet of sheetList) {
     const spreadsheetId = parseSheetId(sheet.url)
@@ -320,6 +322,10 @@ export async function fetchAllSheetsData(sheetList) {
       console.warn(`[sheetsApi] Cannot parse spreadsheet ID from: ${sheet.url}`)
       continue
     }
+
+    // Skip if we already fetched this spreadsheet (e.g. duplicate URL in list)
+    if (seenSpreadsheets.has(spreadsheetId)) continue
+    seenSpreadsheets.add(spreadsheetId)
 
     // 1️⃣  Spreadsheet metadata → get title + all tab names
     const metaRes = await fetch(`${BASE_URL}/${spreadsheetId}?key=${apiKey}`)
@@ -337,7 +343,22 @@ export async function fetchAllSheetsData(sheetList) {
 
     // 2️⃣  Batch-fetch ALL tabs in one API call (instead of N separate calls)
     //   UNFORMATTED_VALUE → booleans = true/false, dates = serial number
-    const tabNames = meta.sheets.map((t) => t.properties.title)
+    // Build tab metadata — skip hidden tabs (ghost copies across spreadsheets)
+    const tabInfos = meta.sheets
+      .filter((t) => !t.properties.hidden)
+      .map((t) => ({
+        title: t.properties.title,
+        gid:   t.properties.sheetId,
+      }))
+    const tabNames = tabInfos.map((t) => t.title)
+
+    // gidMap: tab title → gid (exact + trimmed keys for robust lookup)
+    const gidMap = new Map()
+    for (const info of tabInfos) {
+      gidMap.set(info.title, info.gid)
+      gidMap.set(info.title.trim(), info.gid)
+    }
+
     const ranges = tabNames.map((t) => `ranges=${encodeURIComponent(`${t}!A2:E`)}`).join("&")
     const batchUrl = `${BASE_URL}/${spreadsheetId}/values:batchGet?${ranges}&key=${apiKey}&valueRenderOption=UNFORMATTED_VALUE`
 
@@ -350,9 +371,27 @@ export async function fetchAllSheetsData(sheetList) {
     }
 
     for (const valueRange of batchData.valueRanges ?? []) {
-      // Extract tab name from range string e.g. "'Tab Name'!A2:E" or "Tab!A2:E"
+      // Parse tab name from the response range string (authoritative source)
+      // e.g. "'(Point+RK)One box main 3 clips Jan 26'!A2:E50" → "(Point+RK)One box main 3 clips Jan 26"
       const rangeStr = valueRange.range || ""
-      const tabTitle = rangeStr.replace(/!.*$/, "").replace(/^'|'$/g, "")
+      let parsedTab = rangeStr.replace(/!.*$/, "")
+      if (parsedTab.startsWith("'") && parsedTab.endsWith("'")) {
+        parsedTab = parsedTab.slice(1, -1).replace(/''/g, "'")
+      }
+
+      const tabTitle = parsedTab
+      // Look up gid from metadata: exact → trimmed → NFC-normalized fallback
+      let tabGid = gidMap.get(tabTitle)
+      if (tabGid === undefined) tabGid = gidMap.get(tabTitle.trim())
+      if (tabGid === undefined) {
+        const norm = tabTitle.normalize("NFC").trim()
+        const match = tabInfos.find((t) => t.title.normalize("NFC").trim() === norm)
+        tabGid = match?.gid ?? 0
+      }
+
+      // Skip duplicate tab names already seen from another spreadsheet
+      if (seenTabs.has(tabTitle)) continue
+      seenTabs.add(tabTitle)
 
       for (const [rowIdx, row] of (valueRange.values ?? []).entries()) {
         // A=status(bool)  B=topic  C=responsibility  D=dueDate  E=actualSubmit
@@ -378,6 +417,7 @@ export async function fetchAllSheetsData(sheetList) {
           dueDate:        parsedDate,
           rowIndex:       rowIdx + 2,  // +2: range starts at row 2 (row 1 = header)
           actualSubmit:   parseDueDate(actualSubmitRaw),
+          sheetGid:       tabGid,
         })
       }
     }
@@ -405,9 +445,10 @@ export function categorizeTasks(tasks) {
   const clientStats = {}
   tasks.forEach((t) => {
     if (!String(t.topic || "").trim()) return
-    if (!clientStats[t.clientName]) clientStats[t.clientName] = { total: 0, done: 0 }
-    clientStats[t.clientName].total++
-    if (t.done) clientStats[t.clientName].done++
+    const statsKey = `${t.clientName}::${t.spreadsheetId}`
+    if (!clientStats[statsKey]) clientStats[statsKey] = { total: 0, done: 0 }
+    clientStats[statsKey].total++
+    if (t.done) clientStats[statsKey].done++
   })
 
   // Drop rows that have no valid due date
@@ -461,23 +502,26 @@ export function prepareTimelineData(allTasks) {
 
   const groups = {}
   validTasks.forEach((t) => {
-    if (!groups[t.clientName]) groups[t.clientName] = []
-    groups[t.clientName].push(t)
+    const key = `${t.clientName}::${t.spreadsheetId}`
+    if (!groups[key]) groups[key] = []
+    groups[key].push(t)
   })
 
   // Per-client stats
   const clientStats = {}
   validTasks.forEach((t) => {
-    if (!clientStats[t.clientName]) clientStats[t.clientName] = { total: 0, done: 0 }
-    clientStats[t.clientName].total++
-    if (t.done) clientStats[t.clientName].done++
+    const statsKey = `${t.clientName}::${t.spreadsheetId}`
+    if (!clientStats[statsKey]) clientStats[statsKey] = { total: 0, done: 0 }
+    clientStats[statsKey].total++
+    if (t.done) clientStats[statsKey].done++
   })
 
   let globalMin = null
   let globalMax = null
 
   const clients = Object.entries(groups)
-    .map(([name, tasks]) => {
+    .map(([groupKey, tasks]) => {
+      const name = tasks[0]?.clientName || groupKey
       // Sort tasks by dueDate
       tasks.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
 
@@ -497,7 +541,7 @@ export function prepareTimelineData(allTasks) {
         endDate,
         spreadsheetId: tasks[0]?.spreadsheetId || "",
         month: tasks[0]?.month || "",
-        stats: clientStats[name] || { total: 0, done: 0 },
+        stats: clientStats[groupKey] || { total: 0, done: 0 },
         tasks: tasks.map((t) => ({
           ...t,
           startDate, // client's earliest dueDate

@@ -47,8 +47,9 @@ function daysFromToday(dueDate) {
 
 function groupByClient(tasks) {
   return tasks.reduce((acc, task) => {
-    if (!acc[task.clientName]) acc[task.clientName] = []
-    acc[task.clientName].push(task)
+    const key = `${task.clientName}::${task.spreadsheetId}`
+    if (!acc[key]) acc[key] = []
+    acc[key].push(task)
     return acc
   }, {})
 }
@@ -339,11 +340,12 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                 </td>
               </tr>
 
-            ) : groupList.map(([clientName, clientTasks], groupIdx) => {
-              const isOpen  = expanded.has(clientName)
+            ) : groupList.map(([groupKey, clientTasks], groupIdx) => {
+              const clientName = clientTasks[0].clientName
+              const isOpen  = expanded.has(groupKey)
               const first   = clientTasks[0]
               const hasMore = clientTasks.length > 1
-              const stats   = clientStats[clientName]
+              const stats   = clientStats[groupKey]
 
               // File-level background color
               const fc = fileColorMap[first.spreadsheetId || first.month || "unknown"]
@@ -353,10 +355,10 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
               const subHover = "hover:brightness-[0.95]"
 
               return (
-                <Fragment key={clientName}>
+                <Fragment key={groupKey}>
                   {/* Group summary row */}
                   <tr
-                    onClick={() => hasMore && toggle(clientName)}
+                    onClick={() => hasMore && toggle(groupKey)}
                     className={`transition-colors ${rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover} animate-magic-enter`}
                     style={{ animationDelay: `${Math.min(groupIdx, 10) * 60}ms` }}
                   >
@@ -388,7 +390,19 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                       </div>
                     </td>
 
-                    <td className="px-6 py-4 font-medium text-gray-800">{first.topic}</td>
+                    <td className="px-6 py-4 font-medium text-gray-800">
+                      {first.topic}
+                      <a
+                        href={`https://docs.google.com/spreadsheets/d/${first.spreadsheetId}/edit#gid=${first.sheetGid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-1.5 inline-block text-gray-300 hover:text-blue-500 transition-colors"
+                        title="Open in Google Sheets"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <svg className="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                      </a>
+                    </td>
                     <td className="px-6 py-4 text-gray-500">{first.responsibility}</td>
                     <td className="px-6 py-4 text-gray-500">{fmtDate(first.dueDate)}</td>
                     <ActualSubmitCell actualSubmit={first.actualSubmit} />
@@ -408,7 +422,19 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                       <td className="py-2.5 pl-14 pr-6">
                         <span className="text-xs text-purple-200">└</span>
                       </td>
-                      <td className="px-6 py-2.5 text-gray-600">{task.topic}</td>
+                      <td className="px-6 py-2.5 text-gray-600">
+                        {task.topic}
+                        <a
+                          href={`https://docs.google.com/spreadsheets/d/${task.spreadsheetId}/edit#gid=${task.sheetGid}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-1.5 inline-block text-gray-300 hover:text-blue-500 transition-colors"
+                          title="Open in Google Sheets"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg className="w-3 h-3 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /><path strokeLinecap="round" strokeLinejoin="round" d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.102 1.101" /></svg>
+                        </a>
+                      </td>
                       <td className="px-6 py-2.5 text-gray-400">{task.responsibility}</td>
                       <td className="px-6 py-2.5 text-gray-400">{fmtDate(task.dueDate)}</td>
                       <ActualSubmitCell actualSubmit={task.actualSubmit} compact />

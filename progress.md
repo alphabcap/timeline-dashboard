@@ -1,6 +1,6 @@
 # Timeline Dashboard — Progress Log
 
-> Last updated: 2026-04-02
+> Last updated: 2026-04-10
 > For AI assistants and human collaborators — this file documents what has been built, how things work, and what's left to do.
 
 ---
@@ -116,6 +116,15 @@ src/
 - `.env` and `dist/` added to `.gitignore` (tokens were being exposed in public repo)
 - Removed tracked `.env` and `dist/` from git history
 - GitHub secret scanning auto-revoked exposed tokens — new tokens generated
+
+### 9. Google Sheets Link per Row
+- Every row in Table view has a small link icon (chain icon) after the Content/Topic column
+- Clicking opens the correct Google Sheet at the exact tab: `https://docs.google.com/spreadsheets/d/{id}/edit#gid={gid}`
+- **gid resolution**: Uses range-string parsing from `batchGet` response + metadata `sheetId` lookup
+- **Hidden tabs skipped**: `meta.sheets` filtered by `!t.properties.hidden` to avoid ghost copies across spreadsheets
+- **Tab deduplication**: `seenTabs` Set prevents same tab name from appearing multiple times across spreadsheets
+- **Grouping key**: Uses `clientName::spreadsheetId` to keep tabs from different spreadsheets separate
+- **Files**: `sheetsApi.js` (gid in task objects), `TimelineTable.jsx` (link icon rendering)
 
 ---
 

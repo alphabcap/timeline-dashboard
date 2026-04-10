@@ -930,7 +930,7 @@ export default function DashboardView({
   const HEALTH_PREVIEW_COUNT = 5
 
   // ── Brand status (confirmed vs new) ──
-  const allTabNames = useMemo(() => Object.keys(clientStats), [clientStats])
+  const allTabNames = useMemo(() => [...new Set(Object.keys(clientStats).map((k) => k.split("::")[0]))], [clientStats])
   const brandStatus = useMemo(() => computeBrandStatus(allTabNames), [allTabNames, brandVer])
 
   // ── Brand action handlers ──
@@ -958,7 +958,8 @@ export default function DashboardView({
 
     // Group raw tab names → brand name, merge stats
     const brands = {}
-    Object.entries(clientStats).forEach(([tabName, s]) => {
+    Object.entries(clientStats).forEach(([statsKey, s]) => {
+      const tabName = statsKey.split("::")[0]
       const brand = tabToBrand[tabName] || tabName
       if (!brands[brand]) brands[brand] = { total: 0, done: 0, rawTabNames: new Set(), isNew: false }
       brands[brand].total += s.total
@@ -994,10 +995,12 @@ export default function DashboardView({
   // ── Client health data sorted by risk (raw tab names, not brand-resolved) ──
   const clientHealth = useMemo(() => {
     return Object.entries(clientStats)
-      .map(([tabName, stats]) => {
+      .map(([statsKey, stats]) => {
+        const tabName = statsKey.split("::")[0]
         const pct = stats.total > 0 ? (stats.done / stats.total) * 100 : 0
-        const clientOverdue = overdue.filter((t) => t.clientName === tabName)
-        const clientUpcoming = upcoming.filter((t) => t.clientName === tabName)
+        const spreadsheetId = statsKey.split("::")[1]
+        const clientOverdue = overdue.filter((t) => t.clientName === tabName && t.spreadsheetId === spreadsheetId)
+        const clientUpcoming = upcoming.filter((t) => t.clientName === tabName && t.spreadsheetId === spreadsheetId)
         const nextTask = clientUpcoming[0] || null
         const risk = clientOverdue.length * 10 + (100 - pct)
         return {
