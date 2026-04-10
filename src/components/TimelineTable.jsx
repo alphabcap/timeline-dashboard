@@ -201,6 +201,7 @@ function PriorityToggle({ taskKey, priorities, onUpdate }) {
     e.stopPropagation()
     const idx = PRIORITY_ORDER.indexOf(value)
     const nextVal = PRIORITY_ORDER[(idx + 1) % PRIORITY_ORDER.length]
+    console.log("[Priority]", taskKey, value, "→", nextVal)
     onUpdate(taskKey, nextVal || "")
   }
 
