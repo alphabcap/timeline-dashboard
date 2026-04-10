@@ -11,7 +11,8 @@ const GIST_ID      = import.meta.env.VITE_GIST_ID
 const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN
 const TEAM_FILE    = "magic-team.json"
 const ASSIGN_FILE  = "magic-assignments.json"
-const REMARKS_FILE = "magic-remarks.json"
+const REMARKS_FILE    = "magic-remarks.json"
+const PRIORITIES_FILE = "magic-priorities.json"
 const API_BASE     = "https://api.github.com/gists"
 
 function authHeaders() {
@@ -116,6 +117,16 @@ export async function loadRemarksFromGist() {
 
 export async function saveRemarksToGist(remarks) {
   return writeGistFiles({ [REMARKS_FILE]: remarks })
+}
+
+// ── Priorities ──────────────────────────────────────────────────────────────
+
+export async function loadPrioritiesFromGist() {
+  return readGistFile(PRIORITIES_FILE)
+}
+
+export async function savePrioritiesToGist(priorities) {
+  return writeGistFiles({ [PRIORITIES_FILE]: priorities })
 }
 
 export const gistConfigured = Boolean(GIST_ID && GITHUB_TOKEN)

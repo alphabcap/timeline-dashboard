@@ -19,14 +19,14 @@ const BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets"
 // visually distinct yet harmonious.  Index = order of file appearance.
 
 const FILE_COLORS = [
-  { bg: "bg-violet-50/60",   border: "border-violet-200/60", tag: "bg-violet-100 text-violet-700",  label: "violet"  },
-  { bg: "bg-sky-50/60",      border: "border-sky-200/60",    tag: "bg-sky-100 text-sky-700",        label: "sky"     },
-  { bg: "bg-amber-50/60",    border: "border-amber-200/60",  tag: "bg-amber-100 text-amber-700",    label: "amber"   },
-  { bg: "bg-emerald-50/60",  border: "border-emerald-200/60",tag: "bg-emerald-100 text-emerald-700",label: "emerald" },
-  { bg: "bg-rose-50/60",     border: "border-rose-200/60",   tag: "bg-rose-100 text-rose-700",      label: "rose"    },
-  { bg: "bg-cyan-50/60",     border: "border-cyan-200/60",   tag: "bg-cyan-100 text-cyan-700",      label: "cyan"    },
-  { bg: "bg-fuchsia-50/60",  border: "border-fuchsia-200/60",tag: "bg-fuchsia-100 text-fuchsia-700",label: "fuchsia" },
-  { bg: "bg-lime-50/60",     border: "border-lime-200/60",   tag: "bg-lime-100 text-lime-700",      label: "lime"    },
+  { bg: "bg-violet-100/70",  sub: "bg-violet-50/60",  stripe: "border-l-violet-400",  tag: "bg-violet-100 text-violet-700",   label: "violet"  },
+  { bg: "bg-sky-100/70",     sub: "bg-sky-50/60",     stripe: "border-l-sky-400",     tag: "bg-sky-100 text-sky-700",          label: "sky"     },
+  { bg: "bg-amber-100/70",   sub: "bg-amber-50/60",   stripe: "border-l-amber-400",   tag: "bg-amber-100 text-amber-700",     label: "amber"   },
+  { bg: "bg-emerald-100/70", sub: "bg-emerald-50/60", stripe: "border-l-emerald-400", tag: "bg-emerald-100 text-emerald-700",  label: "emerald" },
+  { bg: "bg-rose-100/70",    sub: "bg-rose-50/60",    stripe: "border-l-rose-400",    tag: "bg-rose-100 text-rose-700",        label: "rose"    },
+  { bg: "bg-cyan-100/70",    sub: "bg-cyan-50/60",    stripe: "border-l-cyan-400",    tag: "bg-cyan-100 text-cyan-700",        label: "cyan"    },
+  { bg: "bg-fuchsia-100/70", sub: "bg-fuchsia-50/60", stripe: "border-l-fuchsia-400", tag: "bg-fuchsia-100 text-fuchsia-700",  label: "fuchsia" },
+  { bg: "bg-lime-100/70",    sub: "bg-lime-50/60",    stripe: "border-l-lime-400",    tag: "bg-lime-100 text-lime-700",        label: "lime"    },
 ]
 
 /**

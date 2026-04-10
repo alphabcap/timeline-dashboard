@@ -126,6 +126,21 @@ src/
 - **Grouping key**: Uses `clientName::spreadsheetId` to keep tabs from different spreadsheets separate
 - **Files**: `sheetsApi.js` (gid in task objects), `TimelineTable.jsx` (link icon rendering)
 
+### 10. Priority Marking (ไฟไหม้ / ฝากคิด)
+- PM can mark any task row with 2 priority levels by clicking the fire icon next to client name
+- **🔥 ไฟไหม้** (urgent): Full-row red/orange animated gradient, pulsing glow, flickering fire emoji, red left border
+- **💭 ฝากคิด** (consider): Full-row soft amber gradient, gentle breathing glow, amber left border
+- Click cycles: none → fire → think → none
+- **Synced via Gist**: `magic-priorities.json` — all devices see the same priorities
+- **Files**: `gistStorage.js` (load/save), `App.jsx` (state + Gist sync), `TimelineTable.jsx` (PriorityToggle + row CSS), `index.css` (fire/think animations)
+
+### 11. Spreadsheet Color Coding
+- Each Google Sheet (MAR26, APR26, FEB26...) gets a distinct background color
+- Colors: violet, sky, amber, emerald, rose, cyan, fuchsia, lime
+- Group rows have stronger color, sub-rows slightly lighter
+- Left border stripe matches sheet color for quick visual identification
+- **Files**: `sheetsApi.js` (FILE_COLORS with bg/sub/stripe), `TimelineTable.jsx` (applies border-l-4 + stripe)
+
 ---
 
 ## Known Issues & Gotchas
@@ -144,6 +159,7 @@ src/
 ### Gist File Names
 - Team members: `magic-team.json` (array of `{ name, role, avatar }`)
 - Assignments: `magic-assignments.json` (object `{ "ClientName": { creative: "Name", ae: "Name", pm: "Name" } }`)
+- Priorities: `magic-priorities.json` (object `{ "ClientName::Topic": "fire" | "think" }`)
 - If files don't exist in the Gist, the app gracefully falls back to localStorage
 
 ---

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react"
 import TaskTable, { overdueTasks, upcomingTasks, doneTasks, mockClientStats, CompletedClients } from "./components/TimelineTable"
 import { fetchAllSheetsData, categorizeTasks, parseSheetId, updateTaskCompletion } from "./lib/sheetsApi"
 import { matchMembers, loadTeamMembers, saveTeamMembers, refreshTeamMembers } from "./lib/teamConfig"
-import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, loadRemarksFromGist, saveRemarksToGist, gistConfigured } from "./lib/gistStorage"
+import { loadTeamFromGist, saveTeamToGist, loadAssignmentsFromGist, saveAssignmentsToGist, loadRemarksFromGist, saveRemarksToGist, loadPrioritiesFromGist, savePrioritiesToGist, gistConfigured } from "./lib/gistStorage"
 import TeamFilterBar from "./components/TeamFilterBar"
 import TeamManager from "./components/TeamManager"
 import DashboardView from "./components/DashboardView"
@@ -97,6 +97,7 @@ export default function App() {
   // Guards: skip debounced Gist save when the change came FROM Gist (not from user)
   const skipGistSaveRef = useRef(false)
   const skipRemarksSaveRef = useRef(false)
+  const skipPrioritiesSaveRef = useRef(false)
 
   // On first load, pull latest team + assignments from Gist (shared across all users)
   // Gist is the source of truth — OVERWRITE local (not merge)
@@ -120,6 +121,12 @@ export default function App() {
       skipRemarksSaveRef.current = true
       setRemarks(remote)
     }).catch(() => console.warn("[Gist] Failed to load remarks — using local cache"))
+
+    loadPrioritiesFromGist().then((remote) => {
+      if (!remote || typeof remote !== "object") return
+      skipPrioritiesSaveRef.current = true
+      setPriorities(remote)
+    }).catch(() => console.warn("[Gist] Failed to load priorities — using local cache"))
   }, [])
 
   const updateTeamMembers = (newMembers) => {
@@ -166,6 +173,37 @@ export default function App() {
     }, 500)
     return () => clearTimeout(timer)
   }, [remarks]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Priorities — persisted to localStorage + Gist, keyed by "ClientName::Topic"
+  // Values: "fire" (ไฟไหม้) or "think" (ฝากคิด) or empty/undefined (no priority)
+  const [priorities, setPriorities] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("magic-priorities") || "{}") }
+    catch { return {} }
+  })
+  useEffect(() => {
+    localStorage.setItem("magic-priorities", JSON.stringify(priorities))
+  }, [priorities])
+  const updatePriority = (key, value) => {
+    setPriorities((prev) => {
+      const next = { ...prev }
+      if (value) next[key] = value
+      else delete next[key]
+      return next
+    })
+  }
+  const prioritiesRef = useRef(priorities)
+  prioritiesRef.current = priorities
+  useEffect(() => {
+    if (!gistConfigured) return
+    if (skipPrioritiesSaveRef.current) {
+      skipPrioritiesSaveRef.current = false
+      return
+    }
+    const timer = setTimeout(() => {
+      savePrioritiesToGist(prioritiesRef.current)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [priorities]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Team assignments — persisted to localStorage, keyed by clientName
   // Format: { "Nike TH": { creative: "Tony", ae: "Pleng", pm: "Boom" }, ... }
@@ -468,6 +506,8 @@ export default function App() {
               clientStats={displayClientStats}
               remarks={remarks}
               onUpdateRemark={updateRemark}
+              priorities={priorities}
+              onUpdatePriority={updatePriority}
               assignments={assignments}
               onUpdateAssignment={updateAssignment}
               onToggle={toggleTask}
@@ -482,6 +522,8 @@ export default function App() {
               clientStats={displayClientStats}
               remarks={remarks}
               onUpdateRemark={updateRemark}
+              priorities={priorities}
+              onUpdatePriority={updatePriority}
               assignments={assignments}
               onUpdateAssignment={updateAssignment}
               onToggle={toggleTask}

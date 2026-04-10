@@ -188,6 +188,43 @@ function DaysLateCell({ dueDate, done, compact }) {
   )
 }
 
+// ─── Priority Toggle Button ──────────────────────────────────────────────────
+// Tiny button next to client name. Cycles: none → fire → think → none
+// The row itself gets a full-width fire/think CSS class effect.
+
+const PRIORITY_ORDER = [null, "fire", "think"]
+
+function PriorityToggle({ taskKey, priorities, onUpdate }) {
+  const value = priorities[taskKey] || null
+
+  const cycle = (e) => {
+    e.stopPropagation()
+    const idx = PRIORITY_ORDER.indexOf(value)
+    const nextVal = PRIORITY_ORDER[(idx + 1) % PRIORITY_ORDER.length]
+    onUpdate(taskKey, nextVal || "")
+  }
+
+  return (
+    <button
+      onClick={cycle}
+      className="ml-1 shrink-0 rounded p-0.5 text-gray-300 transition-all hover:scale-110 hover:text-orange-500"
+      title={value === "fire" ? "ไฟไหม้ → ฝากคิด" : value === "think" ? "ฝากคิด → ลบ priority" : "ใส่ priority"}
+    >
+      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill={value ? "currentColor" : "none"} stroke="currentColor" strokeWidth={value ? "0" : "1.5"}>
+        <path d="M12 2C10 6 6 8 6 13a6 6 0 0 0 12 0c0-5-4-7-6-11z" />
+      </svg>
+    </button>
+  )
+}
+
+/** Get priority CSS class for a row */
+function getPriorityClass(taskKey, priorities) {
+  const v = priorities[taskKey]
+  if (v === "fire") return "priority-fire"
+  if (v === "think") return "priority-think"
+  return ""
+}
+
 // ─── Remark Cell ──────────────────────────────────────────────────────────────
 
 function RemarkCell({ taskKey, remarks, onUpdate, compact }) {
@@ -288,7 +325,7 @@ function SkeletonRow() {
 
 // ─── TaskTable ────────────────────────────────────────────────────────────────
 
-export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark, assignments = {}, onUpdateAssignment, onToggle }) {
+export default function TaskTable({ title, badge, tasks, isLoading, clientStats = {}, remarks = {}, onUpdateRemark, priorities = {}, onUpdatePriority, assignments = {}, onUpdateAssignment, onToggle }) {
   const [expanded, setExpanded] = useState(new Set())
   const fileColorMap = useMemo(() => buildFileColorMap(tasks), [tasks])
 
@@ -347,19 +384,21 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
               const hasMore = clientTasks.length > 1
               const stats   = clientStats[groupKey]
 
-              // File-level background color
+              // File-level background color + left stripe
               const fc = fileColorMap[first.spreadsheetId || first.month || "unknown"]
-              const rowBg    = fc ? fc.bg : (groupIdx % 2 === 0 ? "bg-white" : "bg-purple-50/40")
+              const rowBg    = fc ? `${fc.bg} border-l-4 ${fc.stripe}` : (groupIdx % 2 === 0 ? "bg-white" : "bg-purple-50/40")
               const rowHover = "hover:brightness-[0.97]"
-              const subBg    = fc ? fc.bg : (groupIdx % 2 === 0 ? "bg-purple-50/30" : "bg-purple-100/30")
+              const subBg    = fc ? `${fc.sub} border-l-4 ${fc.stripe}` : (groupIdx % 2 === 0 ? "bg-purple-50/30" : "bg-purple-100/30")
               const subHover = "hover:brightness-[0.95]"
+              const firstPriorityKey = `${clientName}::${first.topic}`
+              const firstPriorityCls = getPriorityClass(firstPriorityKey, priorities)
 
               return (
                 <Fragment key={groupKey}>
                   {/* Group summary row */}
                   <tr
                     onClick={() => hasMore && toggle(groupKey)}
-                    className={`transition-colors ${rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover} animate-magic-enter`}
+                    className={`transition-colors ${firstPriorityCls || rowBg} ${hasMore ? `cursor-pointer ${rowHover}` : rowHover} animate-magic-enter`}
                     style={{ animationDelay: `${Math.min(groupIdx, 10) * 60}ms` }}
                   >
                     <StatusToggleCell task={first} onToggle={onToggle} />
@@ -386,6 +425,11 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                           assignments={assignments}
                           onUpdate={onUpdateAssignment || (() => {})}
                           compact
+                        />
+                        <PriorityToggle
+                          taskKey={firstPriorityKey}
+                          priorities={priorities}
+                          onUpdate={onUpdatePriority || (() => {})}
                         />
                       </div>
                     </td>
@@ -415,8 +459,11 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                   </tr>
 
                   {/* Expanded sub-rows */}
-                  {isOpen && clientTasks.map((task, subIdx) => (
-                    <tr key={task.id} className={`${subBg} transition-colors ${subHover} animate-magic-enter`} style={{ animationDelay: `${subIdx * 40}ms` }}>
+                  {isOpen && clientTasks.map((task, subIdx) => {
+                    const subPriorityKey = `${clientName}::${task.topic}`
+                    const subPriorityCls = getPriorityClass(subPriorityKey, priorities)
+                    return (
+                    <tr key={task.id} className={`${subPriorityCls || subBg} transition-colors ${subHover} animate-magic-enter`} style={{ animationDelay: `${subIdx * 40}ms` }}>
                       <StatusToggleCell task={task} onToggle={onToggle} compact />
                       <MonthCell month={task.month} compact />
                       <td className="py-2.5 pl-14 pr-6">
@@ -446,7 +493,7 @@ export default function TaskTable({ title, badge, tasks, isLoading, clientStats 
                         compact
                       />
                     </tr>
-                  ))}
+                  )})}
                 </Fragment>
               )
             })}
